@@ -1,0 +1,30 @@
+name: Build AxoGuard JAR
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Depoyu Cek
+      uses: actions/checkout@v4
+
+    - name: Java 8 Kur
+      uses: actions/setup-java@v4
+      with:
+        java-version: '8'
+        distribution: 'temurin'
+        cache: maven
+
+    - name: Maven ile Derle
+      run: mvn -B package --file pom.xml
+
+    - name: JAR Dosyasini Yukle
+      uses: actions/upload-artifact@v4
+      with:
+        name: AxoGuard-Plugin
+        path: target/AxoGuard-1.0-SNAPSHOT.jar
