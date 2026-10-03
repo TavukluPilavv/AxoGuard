@@ -1,0 +1,9 @@
+name: AxoGuard
+version: 1.0
+main: com.axoguard.anticheat.Main
+api-version: 1.16
+commands:
+  report:
+    description: Oyuncu sikayet etme menusu
+  reports:
+    description: Yetkili report inceleme komutu
