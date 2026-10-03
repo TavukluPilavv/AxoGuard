@@ -1,0 +1,17 @@
+# AxoGuard & AxoBot Ayar Dosyasi
+
+bot-settings:
+  bot-name: "AxoBot"
+  invisible: true
+
+checks:
+  speed:
+    enabled: true
+    max-violations: 5
+  fly:
+    enabled: true
+  autoclicker:
+    max-cps: 18
+
+messages:
+  bot-prefix: "&8[&bAxoBot&8] &o&7"
