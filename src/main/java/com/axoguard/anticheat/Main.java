@@ -57,6 +57,9 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
     private final Map<UUID, Integer> diamondBreakCount = new HashMap<>();
     private final Map<UUID, Long> diamondResetTimer = new HashMap<>();
 
+    // Yasaklı Client ve Mod İsimleri Listesi
+    private final List<String> forbiddenClients = Arrays.asList("wurst", "meteor", "yfend", "device", "arvion", "freecam");
+
     @Override
     public void onEnable() {
         saveDefaultConfig();
@@ -71,7 +74,7 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
         }
 
         Bukkit.getScheduler().runTaskTimer(this, cpsMap::clear, 20L, 20L);
-        getLogger().info("AxoGuard & AxoBot Sıfırdan Tam Sürüm Aktif!");
+        getLogger().info("AxoGuard & AxoBot Client Kontrol Sistemi Aktif!");
     }
 
     private void flagPlayer(Player player, String hackType) {
@@ -81,7 +84,7 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
         int logCount = violations.getOrDefault(uuid, 0) + 1;
         violations.put(uuid, logCount);
 
-        hitBlockTime.put(uuid, System.currentTimeMillis() + 3000); 
+        hitBlockTime.put(uuid, System.currentTimeMillis() + 3500); 
 
         int botId = (Math.abs(uuid.hashCode()) % 500) + 1;
         botTargets.put(botId, uuid);
@@ -110,7 +113,7 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
             }
         }
 
-        if (logCount >= 15) {
+        if (logCount >= 10) {
             int kicks = kickCountMap.getOrDefault(uuid, 0) + 1;
             kickCountMap.put(uuid, kicks);
             violations.put(uuid, 0);
@@ -220,10 +223,49 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
                         ChatColor.WHITE + "discord.gg/axocraft";
 
                 player.kickPlayer(banScreen);
+                return;
             } else {
                 bannedPlayers.remove(uuid);
                 banReasons.remove(uuid);
             }
+        }
+
+        // Giriş esnasında / brand (kanal) verilerini kontrol ederek yasaklı client/mod taraması
+        Bukkit.getScheduler().runTaskLater(this, () -> {
+            if (player.isOnline()) {
+                checkForForbiddenMods(player);
+            }
+        }, 20L); // 1 saniye sonra kontrol et
+    }
+
+    private void checkForForbiddenMods(Player player) {
+        try {
+            // Oyuncunun istemci markasını (brand) kontrol et
+            player.sendPluginMessage(this, "MC|Brand", new byte[0]);
+        } catch (Exception ignored) {}
+    }
+
+    // Fired when player sends brand/mod info or chat/command during login phase
+    @EventHandler
+    public void onPluginMessage(org.bukkit.event.server.PluginMessageEvent event) {
+        if (!(event.getPlayer() instanceof Player)) return;
+        Player player = (Player) event.getPlayer();
+
+        if (event.getTag().equals("MC|Brand") || event.getTag().equals("minecraft:brand")) {
+            try {
+                byte[] data = event.getData();
+                String brand = new String(data, java.nio.charset.StandardCharsets.UTF_8).toLowerCase();
+
+                for (String forbidden : forbiddenClients) {
+                    if (brand.contains(forbidden)) {
+                        player.kickPlayer(ChatColor.RED + "AxoGuard Güvenlik Sistemi\n\n" +
+                                ChatColor.YELLOW + "Sunucumuzda yasaklı bir mod/client tespit edildi!\n" +
+                                ChatColor.RED + "Tespit Edilen Yasaklı Mod: " + ChatColor.GOLD + forbidden.toUpperCase() + "\n\n" +
+                                ChatColor.WHITE + "Lütfen bu modu/client'ı kaldırıp tekrar giriş yapın.");
+                        break;
+                    }
+                }
+            } catch (Exception ignored) {}
         }
     }
 
@@ -313,7 +355,7 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
             } else {
                 int count = diamondBreakCount.getOrDefault(uuid, 0) + 1;
                 diamondBreakCount.put(uuid, count);
-                if (count >= 6) {
+                if (count >= 4) {
                     flagPlayer(player, "Xray / OreFinder");
                 }
             }
@@ -335,7 +377,7 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
                 LivingEntity victim = (LivingEntity) event.getEntity();
                 double distance = attacker.getLocation().distance(victim.getLocation());
 
-                if (distance > 4.2 && attacker.getGameMode() != GameMode.CREATIVE) {
+                if (distance > 3.9 && attacker.getGameMode() != GameMode.CREATIVE) {
                     flagPlayer(attacker, "Hitbox / Reach");
                 }
             }
@@ -351,12 +393,12 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
         Location to = event.getTo();
         double distance = from.distance(to);
 
-        if (distance > 1.35 && !player.isFlying() && player.getVelocity().getY() >= -0.5) {
+        if (distance > 1.15 && !player.isFlying() && player.getVelocity().getY() >= -0.3 && from.getY() == to.getY()) {
             event.setTo(from);
             flagPlayer(player, "Speed");
         }
 
-        if (to.getY() - from.getY() > 1.55 && !player.isFlying() && !player.getLocation().getBlock().getType().isSolid()) {
+        if (to.getY() - from.getY() > 1.35 && !player.isFlying() && !player.getLocation().getBlock().getType().isSolid()) {
             event.setTo(from);
             flagPlayer(player, "Fly");
         }
@@ -369,7 +411,7 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
         int cps = cpsMap.getOrDefault(uuid, 0) + 1;
         cpsMap.put(uuid, cps);
 
-        if (cps > 25) {
+        if (cps > 20) {
             flagPlayer(player, "AutoClicker");
         }
     }
