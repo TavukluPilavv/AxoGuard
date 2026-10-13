@@ -1,0 +1,32 @@
+name: AxoGuard
+version: 2.0
+main: com.axoguard.anticheat.Main
+api-version: 1.16
+commands:
+  report:
+    description: Oyuncu sikayet et
+    usage: /report <oyuncu>
+  reports:
+    description: Sikayet edilenleri listele
+    usage: /reports
+  banla:
+    description: Oyuncuyu banla
+    usage: /banla <oyuncu> <sure> <sebep>
+  banla-ip:
+    description: Oyuncuya IP ban at
+    usage: /banla-ip <oyuncu> <sure> <sebep>
+  ban-ip:
+    description: IP ban ac
+    usage: /ban-ip <ip>
+  banaç:
+    description: Oyuncu ban ac
+    usage: /banaç <oyuncu>
+  mutele:
+    description: Oyuncuyu mutele
+    usage: /mutele <oyuncu> <sure> <sebep>
+  muteaç:
+    description: Oyuncunun mutesini ac
+    usage: /muteaç <oyuncu>
+  axobot:
+    description: AxoBot izleme komutu
+    usage: /axobot izle <id>
