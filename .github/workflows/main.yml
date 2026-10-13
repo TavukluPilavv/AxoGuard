@@ -22,3 +22,10 @@ jobs:
         
     - name: Maven ile Derle
       run: mvn clean package
+
+    - name: JAR Dosyasını Yükle (Artifact)
+      uses: actions/upload-artifact@v4
+      with:
+        name: AxoGuard-Plugin
+        path: target/*.jar
+
