@@ -31,11 +31,12 @@ import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.inventory.meta.SkullMeta;
 import org.bukkit.plugin.java.JavaPlugin;
+import org.bukkit.plugin.messaging.PluginMessageListener;
 
 import java.text.SimpleDateFormat;
 import java.util.*;
 
-public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCompleter {
+public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCompleter, PluginMessageListener {
 
     private final Map<UUID, Integer> violations = new HashMap<>();
     private final Map<UUID, Integer> kickCountMap = new HashMap<>();
@@ -57,13 +58,17 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
     private final Map<UUID, Integer> diamondBreakCount = new HashMap<>();
     private final Map<UUID, Long> diamondResetTimer = new HashMap<>();
 
-    // Yasaklı Client ve Mod İsimleri Listesi
     private final List<String> forbiddenClients = Arrays.asList("wurst", "meteor", "yfend", "device", "arvion", "freecam");
 
     @Override
     public void onEnable() {
         saveDefaultConfig();
         getServer().getPluginManager().registerEvents(this, this);
+
+        try {
+            this.getServer().getMessenger().registerIncomingPluginChannel(this, "MC|Brand", this);
+            this.getServer().getMessenger().registerIncomingPluginChannel(this, "minecraft:brand", this);
+        } catch (Exception ignored) {}
 
         String[] cmds = {"axobot", "report", "reports", "banla", "banla-ip", "ban-ip", "banaç", "mutele", "muteaç"};
         for (String cmd : cmds) {
@@ -74,7 +79,7 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
         }
 
         Bukkit.getScheduler().runTaskTimer(this, cpsMap::clear, 20L, 20L);
-        getLogger().info("AxoGuard & AxoBot Client Kontrol Sistemi Aktif!");
+        getLogger().info("AxoGuard & AxoBot Gelişmiş Koruma Sürümü Aktif!");
     }
 
     private void flagPlayer(Player player, String hackType) {
@@ -229,39 +234,20 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
                 banReasons.remove(uuid);
             }
         }
-
-        // Giriş esnasında / brand (kanal) verilerini kontrol ederek yasaklı client/mod taraması
-        Bukkit.getScheduler().runTaskLater(this, () -> {
-            if (player.isOnline()) {
-                checkForForbiddenMods(player);
-            }
-        }, 20L); // 1 saniye sonra kontrol et
     }
 
-    private void checkForForbiddenMods(Player player) {
-        try {
-            // Oyuncunun istemci markasını (brand) kontrol et
-            player.sendPluginMessage(this, "MC|Brand", new byte[0]);
-        } catch (Exception ignored) {}
-    }
-
-    // Fired when player sends brand/mod info or chat/command during login phase
-    @EventHandler
-    public void onPluginMessage(org.bukkit.event.server.PluginMessageEvent event) {
-        if (!(event.getPlayer() instanceof Player)) return;
-        Player player = (Player) event.getPlayer();
-
-        if (event.getTag().equals("MC|Brand") || event.getTag().equals("minecraft:brand")) {
+    @Override
+    public void onPluginMessageReceived(String channel, Player player, byte[] message) {
+        if (channel.equalsIgnoreCase("MC|Brand") || channel.equalsIgnoreCase("minecraft:brand")) {
             try {
-                byte[] data = event.getData();
-                String brand = new String(data, java.nio.charset.StandardCharsets.UTF_8).toLowerCase();
+                String brand = new String(message, java.nio.charset.StandardCharsets.UTF_8).toLowerCase();
 
                 for (String forbidden : forbiddenClients) {
                     if (brand.contains(forbidden)) {
                         player.kickPlayer(ChatColor.RED + "AxoGuard Güvenlik Sistemi\n\n" +
-                                ChatColor.YELLOW + "Sunucumuzda yasaklı bir mod/client tespit edildi!\n" +
-                                ChatColor.RED + "Tespit Edilen Yasaklı Mod: " + ChatColor.GOLD + forbidden.toUpperCase() + "\n\n" +
-                                ChatColor.WHITE + "Lütfen bu modu/client'ı kaldırıp tekrar giriş yapın.");
+                                ChatColor.YELLOW + "Giriş engellendi! Sunucumuzda yasaklı mod/client tespit edildi.\n" +
+                                ChatColor.RED + "Kullandığınız Yasaklı Mod: " + ChatColor.GOLD + forbidden.toUpperCase() + "\n\n" +
+                                ChatColor.WHITE + "Lütfen bu modu kaldırıp tekrar giriş yapın!");
                         break;
                     }
                 }
