@@ -1,0 +1,6 @@
+settings:
+  check-interval: 20
+  max-violations: 15
+  kick-limit: 3
+messages:
+  prefix: "&4[AxoGuard] &7"
