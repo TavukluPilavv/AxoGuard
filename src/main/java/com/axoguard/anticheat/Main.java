@@ -35,6 +35,7 @@ import org.bukkit.plugin.messaging.PluginMessageListener;
 
 import java.text.SimpleDateFormat;
 import java.util.*;
+import java.util.stream.Collectors;
 
 public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCompleter, PluginMessageListener {
 
@@ -70,7 +71,7 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
             this.getServer().getMessenger().registerIncomingPluginChannel(this, "minecraft:brand", this);
         } catch (Exception ignored) {}
 
-        String[] cmds = {"axobot", "report", "reports", "banla", "banla-ip", "ban-ip", "banaç", "mutele", "muteaç"};
+        String[] cmds = {"axobot", "report", "reports", "banla", "banla-ip", "ban-ip", "banaç", "banaç-ip", "mutele", "muteaç"};
         for (String cmd : cmds) {
             if (getCommand(cmd) != null) {
                 getCommand(cmd).setExecutor(this);
@@ -118,7 +119,6 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
             }
         }
 
-        // Güncellendi: 12x ihtar eşiği
         if (logCount >= 12) {
             int kicks = kickCountMap.getOrDefault(uuid, 0) + 1;
             kickCountMap.put(uuid, kicks);
@@ -151,6 +151,23 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
         Bukkit.broadcastMessage(ChatColor.DARK_RED + "[AxoGuard] " + ChatColor.YELLOW + player.getName() + ChatColor.RED + " hile (" + hackType + ") kullanımı nedeniyle atıldı.");
     }
 
+    private String formatDurationDetailed(String durationStr) {
+        try {
+            durationStr = durationStr.toLowerCase().trim();
+            long val = Long.parseLong(durationStr.replaceAll("[^0-9]", ""));
+            if (durationStr.endsWith("g") || durationStr.endsWith("gün")) {
+                return val + " Gün";
+            } else if (durationStr.endsWith("h") || durationStr.endsWith("saat")) {
+                return val + " Saat";
+            } else if (durationStr.endsWith("d") || durationStr.endsWith("dakika")) {
+                return val + " Dakika";
+            } else if (durationStr.endsWith("s")) {
+                return val + " Saniye";
+            }
+        } catch (Exception ignored) {}
+        return durationStr.toUpperCase();
+    }
+
     private void executeBan(String targetName, String executor, String durationStr, String reason) {
         Player target = Bukkit.getPlayer(targetName);
         UUID uuid = target != null ? target.getUniqueId() : Bukkit.getOfflinePlayer(targetName).getUniqueId();
@@ -160,13 +177,14 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
         banReasons.put(uuid, reason);
 
         String dateStr = new SimpleDateFormat("yyyy/MM/dd").format(new Date());
+        String detailedDuration = formatDurationDetailed(durationStr);
 
         String banScreen = ChatColor.GOLD + "Bağlantı koptu\n\n" +
                 ChatColor.GOLD + "" + ChatColor.BOLD + "BU SUNUCUDAN YASAKLANDINIZ\n\n" +
                 ChatColor.WHITE + "⏰ TARİH: " + ChatColor.YELLOW + dateStr + "\n" +
                 ChatColor.WHITE + "🔨 YASAKLAYAN: " + ChatColor.AQUA + executor + "\n" +
                 ChatColor.WHITE + "🏷 SEBEP: " + ChatColor.LIGHT_PURPLE + reason + "\n" +
-                ChatColor.WHITE + "⌛ KALAN SÜRE: " + ChatColor.LIGHT_PURPLE + durationStr.toUpperCase() + "\n\n" +
+                ChatColor.WHITE + "⌛ SÜRE: " + ChatColor.LIGHT_PURPLE + detailedDuration + "\n\n" +
                 ChatColor.AQUA + "İTİRAZ EDEBİLİRSİNİZ:\n" +
                 ChatColor.WHITE + "discord.gg/axocraft";
 
@@ -174,12 +192,17 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
             target.kickPlayer(banScreen);
         }
 
+        String banId = Integer.toHexString((int) (Math.random() * 0xFFFFFF)).toUpperCase();
+
         Bukkit.broadcastMessage(ChatColor.GRAY + "ÖLDÜRÜLDÜ.");
-        Bukkit.broadcastMessage(ChatColor.GRAY + "" + ChatColor.BOLD + "SÜRELİ YASAKLAMA BİLDİRİMİ");
+        Bukkit.broadcastMessage(ChatColor.DARK_GRAY + "---------------------------------------------");
+        Bukkit.broadcastMessage(ChatColor.RED + "" + ChatColor.BOLD + "SÜRELİ YASAKLAMA BİLDİRİMİ");
+        Bukkit.broadcastMessage(ChatColor.GRAY + "ⓘ ID " + ChatColor.WHITE + banId);
         Bukkit.broadcastMessage(ChatColor.GRAY + "🗡 YASAKLANAN " + ChatColor.RED + targetName);
         Bukkit.broadcastMessage(ChatColor.GRAY + "🔨 YASAKLAYAN " + ChatColor.AQUA + executor);
         Bukkit.broadcastMessage(ChatColor.GRAY + "🏷 SEBEP " + ChatColor.LIGHT_PURPLE + reason);
-        Bukkit.broadcastMessage(ChatColor.GRAY + "⌛ SÜRE " + ChatColor.LIGHT_PURPLE + durationStr.toUpperCase());
+        Bukkit.broadcastMessage(ChatColor.GRAY + "⌛ SÜRE " + ChatColor.GREEN + detailedDuration);
+        Bukkit.broadcastMessage(ChatColor.DARK_GRAY + "---------------------------------------------");
     }
 
     private void executeIpBan(String targetName, String executor, String durationStr, String reason) {
@@ -263,30 +286,35 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
         mutedPlayers.put(target.getUniqueId(), System.currentTimeMillis() + durationMs);
 
         String muteId = Integer.toHexString((int) (Math.random() * 0xFFFFFF)).toUpperCase();
+        String detailedDuration = formatDurationDetailed(durationStr);
 
-        Bukkit.broadcastMessage(ChatColor.GRAY + "" + ChatColor.BOLD + "SÜRELİ MUTE BİLDİRİMİ");
-        Bukkit.broadcastMessage(ChatColor.GRAY + "ⓘ ID " + muteId);
+        Bukkit.broadcastMessage(ChatColor.DARK_GRAY + "---------------------------------------------");
+        Bukkit.broadcastMessage(ChatColor.GOLD + "" + ChatColor.BOLD + "SÜRELİ MUTE BİLDİRİMİ");
+        Bukkit.broadcastMessage(ChatColor.GRAY + "ⓘ ID " + ChatColor.WHITE + muteId);
         Bukkit.broadcastMessage(ChatColor.GRAY + "🎙 MUTELENEN " + ChatColor.RED + targetName);
         Bukkit.broadcastMessage(ChatColor.GRAY + "🔨 MUTELENEN " + ChatColor.AQUA + executor);
         Bukkit.broadcastMessage(ChatColor.GRAY + "🏷 SEBEP " + ChatColor.LIGHT_PURPLE + reason);
-        Bukkit.broadcastMessage(ChatColor.GRAY + "⌛ SÜRE " + ChatColor.LIGHT_PURPLE + durationStr.toUpperCase());
+        Bukkit.broadcastMessage(ChatColor.GRAY + "⌛ SÜRE " + ChatColor.GREEN + detailedDuration);
+        Bukkit.broadcastMessage(ChatColor.DARK_GRAY + "---------------------------------------------");
 
-        target.sendMessage(ChatColor.RED + "Sohbet yetkiniz " + durationStr + " süreliğine kısıtlandı!");
+        target.sendMessage(ChatColor.RED + "Sohbet yetkiniz " + detailedDuration + " süreyle kısıtlandı!");
     }
 
     private long parseDuration(String input) {
         try {
-            input = input.toLowerCase();
+            input = input.toLowerCase().trim();
             long val = Long.parseLong(input.replaceAll("[^0-9]", ""));
             if (input.endsWith("g") || input.endsWith("gün")) {
                 return val * 24 * 60 * 60 * 1000L;
-            } else if (input.endsWith("s") || input.endsWith("saat")) {
+            } else if (input.endsWith("h") || input.endsWith("saat")) {
                 return val * 60 * 60 * 1000L;
-            } else if (input.endsWith("d") || input.endsWith("dka") || input.endsWith("dakika")) {
+            } else if (input.endsWith("d") || input.endsWith("dakika")) {
                 return val * 60 * 1000L;
+            } else if (input.endsWith("s")) {
+                return val * 1000L;
             }
         } catch (Exception ignored) {}
-        return 1 * 24 * 60 * 60 * 1000L;
+        return 24 * 60 * 60 * 1000L;
     }
 
     @EventHandler
@@ -295,16 +323,17 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
         UUID uuid = player.getUniqueId();
 
         if (mutedPlayers.containsKey(uuid)) {
-            if (System.currentTimeMillis() < mutedPlayers.get(uuid)) {
+            long expireTime = mutedPlayers.get(uuid);
+            if (System.currentTimeMillis() < expireTime) {
                 event.setCancelled(true);
                 player.sendMessage(ChatColor.RED + "Şu anda mutelisiniz! Sohbete yazı yazamazsınız.");
                 return;
             } else {
                 mutedPlayers.remove(uuid);
+                player.sendMessage(ChatColor.GREEN + "Mutenizin süresi doldu, artık sohbeti kullanabilirsiniz.");
             }
         }
 
-        // Geliştirilmiş Akıllı AxoBot Sohbet Sistemi
         if (activeBotSession.contains(uuid) && player.isOp()) {
             event.setCancelled(true);
             String msg = event.getMessage();
@@ -439,7 +468,6 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
             return true;
         }
 
-        // Oyuncu Varlığı Kontrolü Eklendi
         if (cmd.equals("banla")) {
             if (args.length < 3) {
                 player.sendMessage(ChatColor.RED + "Kullanım: /banla <oyuncu> <süre> <sebep>");
@@ -485,9 +513,30 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
                 return true;
             }
             UUID targetUuid = Bukkit.getOfflinePlayer(args[0]).getUniqueId();
+            if (!bannedPlayers.containsKey(targetUuid)) {
+                player.sendMessage(ChatColor.RED + "Bu oyuncunun aktif bir banı bulunmuyor!");
+                return true;
+            }
             bannedPlayers.remove(targetUuid);
             banReasons.remove(targetUuid);
             player.sendMessage(ChatColor.GREEN + args[0] + " oyuncusunun banı açıldı.");
+            return true;
+        }
+
+        if (cmd.equals("banaç-ip")) {
+            if (args.length < 1) {
+                player.sendMessage(ChatColor.RED + "Kullanım: /banaç-ip <ip>");
+                return true;
+            }
+            String ip = args[0];
+            if (!bannedIps.contains(ip)) {
+                player.sendMessage(ChatColor.RED + "Bu IP adresine ait aktif bir ban bulunmuyor!");
+                return true;
+            }
+            bannedIps.remove(ip);
+            ipBannedUntil.remove(ip);
+            ipBanReasons.remove(ip);
+            player.sendMessage(ChatColor.GREEN + ip + " IP adresinin banı başarıyla kaldırıldı.");
             return true;
         }
 
@@ -511,12 +560,17 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
                 return true;
             }
             Player target = Bukkit.getPlayer(args[0]);
-            if (target != null) {
-                mutedPlayers.remove(target.getUniqueId());
-                player.sendMessage(ChatColor.GREEN + target.getName() + " oyuncusunun mutesi açıldı.");
-                target.sendMessage(ChatColor.GREEN + "Muteniz kaldırıldı, yazabilirsiniz.");
-            } else {
-                player.sendMessage(ChatColor.RED + "Oyuncu çevrimiçi değil!");
+            UUID targetUuid = target != null ? target.getUniqueId() : Bukkit.getOfflinePlayer(args[0]).getUniqueId();
+
+            if (!mutedPlayers.containsKey(targetUuid)) {
+                player.sendMessage(ChatColor.RED + "Bu oyuncunun aktif bir mutesi bulunmuyor!");
+                return true;
+            }
+
+            mutedPlayers.remove(targetUuid);
+            player.sendMessage(ChatColor.GREEN + args[0] + " oyuncusunun mutesi açıldı.");
+            if (target != null && target.isOnline()) {
+                target.sendMessage(ChatColor.GREEN + "Muteniz yetkili tarafından kaldırıldı, artık yazabilirsiniz.");
             }
             return true;
         }
@@ -587,7 +641,6 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
             return;
         }
 
-        // Doğrudan reportlanan oyuncunun yanına ışınlanma özelliği
         if (title.equals(ChatColor.DARK_RED + "Reportlanan Oyuncular")) {
             event.setCancelled(true);
             if (event.getCurrentItem() == null || !event.getCurrentItem().hasItemMeta()) return;
@@ -606,16 +659,58 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
         }
     }
 
+    // Sadece OP oyuncular için çalışan dinamik TAB tamamlama (Normal oyuncular komutları görmez)
     @Override
     public List<String> onTabComplete(CommandSender sender, Command command, String alias, String[] args) {
         if (!sender.isOp()) return Collections.emptyList();
+
         String cmd = command.getName().toLowerCase();
 
         if (cmd.equals("banla") || cmd.equals("banla-ip") || cmd.equals("mutele")) {
-            if (args.length == 2) return Arrays.asList("1g", "3g", "7g", "1s", "12s", "30d");
+            if (args.length == 1) {
+                return Bukkit.getOnlinePlayers().stream()
+                        .map(Player::getName)
+                        .filter(name -> name.toLowerCase().startsWith(args[0].toLowerCase()))
+                        .collect(Collectors.toList());
+            } else if (args.length == 2) {
+                return Arrays.asList("1g", "3g", "7g", "12h", "1h", "30s");
+            } else if (args.length == 3) {
+                return Arrays.asList("Hile_Kullanımı", "Küfür/Hakaret", "Aşırı_Spam", "Sohbet_Kuralları");
+            }
+        } else if (cmd.equals("muteaç")) {
+            if (args.length == 1) {
+                List<String> mutedNames = new ArrayList<>();
+                for (UUID uuid : mutedPlayers.keySet()) {
+                    Player p = Bukkit.getPlayer(uuid);
+                    if (p != null) mutedNames.add(p.getName());
+                    else mutedNames.add(Bukkit.getOfflinePlayer(uuid).getName());
+                }
+                return mutedNames.stream()
+                        .filter(Objects::nonNull)
+                        .filter(name -> name.toLowerCase().startsWith(args[0].toLowerCase()))
+                        .collect(Collectors.toList());
+            }
+        } else if (cmd.equals("banaç")) {
+            if (args.length == 1) {
+                List<String> bannedNames = new ArrayList<>();
+                for (UUID uuid : bannedPlayers.keySet()) {
+                    bannedNames.add(Bukkit.getOfflinePlayer(uuid).getName());
+                }
+                return bannedNames.stream()
+                        .filter(Objects::nonNull)
+                        .filter(name -> name.toLowerCase().startsWith(args[0].toLowerCase()))
+                        .collect(Collectors.toList());
+            }
+        } else if (cmd.equals("banaç-ip")) {
+            if (args.length == 1) {
+                return new ArrayList<>(bannedIps).stream()
+                        .filter(ip -> ip.toLowerCase().startsWith(args[0].toLowerCase()))
+                        .collect(Collectors.toList());
+            }
         } else if (cmd.equals("axobot")) {
             if (args.length == 1) return Collections.singletonList("izle");
         }
+
         return Collections.emptyList();
     }
 }
