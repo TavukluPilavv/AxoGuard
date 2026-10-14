@@ -118,7 +118,8 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
             }
         }
 
-        if (logCount >= 10) {
+        // Güncellendi: 12x ihtar eşiği
+        if (logCount >= 12) {
             int kicks = kickCountMap.getOrDefault(uuid, 0) + 1;
             kickCountMap.put(uuid, kicks);
             violations.put(uuid, 0);
@@ -228,7 +229,6 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
                         ChatColor.WHITE + "discord.gg/axocraft";
 
                 player.kickPlayer(banScreen);
-                return;
             } else {
                 bannedPlayers.remove(uuid);
                 banReasons.remove(uuid);
@@ -304,6 +304,7 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
             }
         }
 
+        // Geliştirilmiş Akıllı AxoBot Sohbet Sistemi
         if (activeBotSession.contains(uuid) && player.isOp()) {
             event.setCancelled(true);
             String msg = event.getMessage();
@@ -312,12 +313,17 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
             Bukkit.getScheduler().runTask(this, () -> {
                 String botReply;
                 String lower = msg.toLowerCase();
-                if (lower.contains("hile") || lower.contains("vuruyor") || lower.contains("aura")) {
-                    botReply = "AxoBot: Efendim, hareketleri gayet şüpheli, bence de hile açmış!";
-                } else if (lower.contains("temiz") || lower.contains("değil")) {
-                    botReply = "AxoBot: Anladım efendim, takibi sürdürüyorum.";
+                
+                if (lower.contains("selamün aleyküm") || lower.contains("selamun aleykum") || lower.contains("selam")) {
+                    botReply = "AxoBot: Aleykümselam efendim, hoş geldiniz!";
+                } else if (lower.contains("nasılsın") || lower.contains("nasıl gidiyor")) {
+                    botReply = "AxoBot: Hamdolsun efendim, sunucuyu korumaya devam ediyorum ya siz?";
+                } else if (lower.contains("hile mi") || lower.contains("vuruyor mu") || lower.contains("sence hilemi")) {
+                    botReply = "AxoBot: Bilmiyorum efendim, izleyelim önce hareketlerini inceleyeyim.";
+                } else if (lower.contains("ne yapıyorsun") || lower.contains("ne yapıyon")) {
+                    botReply = "AxoBot: Şüpheli oyuncuları gözetliyorum efendim.";
                 } else {
-                    botReply = "AxoBot: Emredersiniz efendim, izlemeye devam ediyorum!";
+                    botReply = "AxoBot: Emredersiniz efendim, takipteyim!";
                 }
                 player.sendMessage(ChatColor.AQUA + botReply);
             });
@@ -433,9 +439,15 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
             return true;
         }
 
+        // Oyuncu Varlığı Kontrolü Eklendi
         if (cmd.equals("banla")) {
             if (args.length < 3) {
                 player.sendMessage(ChatColor.RED + "Kullanım: /banla <oyuncu> <süre> <sebep>");
+                return true;
+            }
+            Player targetCheck = Bukkit.getPlayer(args[0]);
+            if (targetCheck == null && Bukkit.getOfflinePlayer(args[0]).getName() == null) {
+                player.sendMessage(ChatColor.RED + "Bu isimde bir oyuncu bulunamadı!");
                 return true;
             }
             executeBan(args[0], player.getName(), args[1], args[2]);
@@ -445,6 +457,11 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
         if (cmd.equals("banla-ip")) {
             if (args.length < 3) {
                 player.sendMessage(ChatColor.RED + "Kullanım: /banla-ip <oyuncu> <süre> <sebep>");
+                return true;
+            }
+            Player targetCheck = Bukkit.getPlayer(args[0]);
+            if (targetCheck == null) {
+                player.sendMessage(ChatColor.RED + "Bu oyuncu çevrimiçi değil veya bulunamadı!");
                 return true;
             }
             executeIpBan(args[0], player.getName(), args[1], args[2]);
@@ -479,6 +496,11 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
                 player.sendMessage(ChatColor.RED + "Kullanım: /mutele <oyuncu> <süre> <sebep>");
                 return true;
             }
+            Player targetCheck = Bukkit.getPlayer(args[0]);
+            if (targetCheck == null) {
+                player.sendMessage(ChatColor.RED + "Mutelenecek oyuncu oyunda bulunamadı!");
+                return true;
+            }
             executeMute(args[0], player.getName(), args[1], args[2]);
             return true;
         }
@@ -493,6 +515,8 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
                 mutedPlayers.remove(target.getUniqueId());
                 player.sendMessage(ChatColor.GREEN + target.getName() + " oyuncusunun mutesi açıldı.");
                 target.sendMessage(ChatColor.GREEN + "Muteniz kaldırıldı, yazabilirsiniz.");
+            } else {
+                player.sendMessage(ChatColor.RED + "Oyuncu çevrimiçi değil!");
             }
             return true;
         }
@@ -507,7 +531,7 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
                         player.teleport(target.getLocation());
                         activeBotSession.add(player.getUniqueId());
                         player.sendMessage(ChatColor.AQUA + "AxoBot #" + id + " ile " + target.getName() + " yanına ışınlandınız.");
-                        player.sendMessage(ChatColor.YELLOW + "AxoBot: Efendim, izlemeye başladık. Sohbete yazarak benimle konuşabilirsiniz.");
+                        player.sendMessage(ChatColor.YELLOW + "AxoBot: Efendim, Aleykümselam! İzlemeye başladık, sohbete yazarak benimle konuşabilirsiniz.");
                     } else {
                         player.sendMessage(ChatColor.RED + "Geçersiz Bot ID veya hedef oyunda değil!");
                     }
@@ -542,7 +566,7 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
                 SkullMeta meta = (SkullMeta) skull.getItemMeta();
                 meta.setOwningPlayer(t);
                 meta.setDisplayName(ChatColor.YELLOW + t.getName());
-                meta.setLore(Arrays.asList(ChatColor.AQUA + "AxoBot ile Beraber İzle"));
+                meta.setLore(Arrays.asList(ChatColor.AQUA + "AxoBot ile Yanına Işınlan ve İzle"));
                 skull.setItemMeta(meta);
                 gui.setItem(slot++, skull);
             }
@@ -563,6 +587,7 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
             return;
         }
 
+        // Doğrudan reportlanan oyuncunun yanına ışınlanma özelliği
         if (title.equals(ChatColor.DARK_RED + "Reportlanan Oyuncular")) {
             event.setCancelled(true);
             if (event.getCurrentItem() == null || !event.getCurrentItem().hasItemMeta()) return;
@@ -574,7 +599,9 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
                 player.closeInventory();
                 player.teleport(target.getLocation());
                 activeBotSession.add(player.getUniqueId());
-                player.sendMessage(ChatColor.AQUA + "AxoBot: Efendim, " + target.getName() + " oyuncusunu izlemeye başladık. Sohbete yazarak benimle konuşabilirsiniz.");
+                player.sendMessage(ChatColor.AQUA + "AxoBot: Aleykümselam efendim! " + target.getName() + " oyuncusunun yanına ışınlandık, izlemeye başlıyoruz.");
+            } else {
+                player.sendMessage(ChatColor.RED + "Bu oyuncu artık oyunda değil!");
             }
         }
     }
