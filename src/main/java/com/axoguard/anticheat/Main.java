@@ -14,11 +14,11 @@ import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
 import org.bukkit.command.TabCompleter;
-import org.bukkit.entity.ArmorStand;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.IronGolem;
 import org.bukkit.entity.LivingEntity;
 import org.bukkit.entity.Player;
+import org.bukkit.entity.Zombie;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.block.BlockBreakEvent;
@@ -90,7 +90,6 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
     }
 
     private void flagPlayer(Player player, String hackType) {
-        // OP ve Yaratıcı/İzleyici modları kontrol ediliyor (Artık OP'lar da taranıyor!)
         if (player.getGameMode() == GameMode.CREATIVE || player.getGameMode() == GameMode.SPECTATOR) return;
 
         UUID uuid = player.getUniqueId();
@@ -126,7 +125,6 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
             }
         }
 
-        // İstediğin eşikler: Attack Aura için 8x, diğerleri için 13x
         int maxLog = hackType.toLowerCase().contains("aura") ? 8 : 13;
 
         if (logCount >= maxLog) {
@@ -152,13 +150,15 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
     }
 
     private void kickPlayer(Player player, String hackType) {
-        String kickReason = ChatColor.RED + "AxoGuard & AxoBot\n\n" +
-                ChatColor.YELLOW + "AxoAC: Oyuncuda hile tespit edildi!\n" +
+        // İstediğin özel AxoAC Kick Menüsü ekranı
+        String kickReason = ChatColor.RED + "AxoAC - Güvenlik Sistemi\n\n" +
+                ChatColor.YELLOW + "Sunucumuzda hile kullanımı tespit edildi!\n" +
                 ChatColor.RED + "Sebep: " + ChatColor.YELLOW + hackType + "\n\n" +
-                ChatColor.GRAY + "Aşırı Şüpheli Davranış Nedeniyle Atıldınız!";
+                ChatColor.WHITE + "Sunucudan uzaklaştırıldınız!\n" +
+                ChatColor.AQUA + "discord.gg/axocraft";
 
         player.kickPlayer(kickReason);
-        Bukkit.broadcastMessage(ChatColor.DARK_RED + "[AxoGuard] " + ChatColor.YELLOW + player.getName() + ChatColor.RED + " hile (" + hackType + ") kullanımı nedeniyle atıldı.");
+        Bukkit.broadcastMessage(ChatColor.DARK_RED + "[AxoGuard] " + ChatColor.YELLOW + player.getName() + ChatColor.RED + " hile (" + hackType + ") nedeniyle atıldı.");
     }
 
     private String formatDurationDetailed(String durationStr) {
@@ -406,13 +406,12 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
             UUID uuid = attacker.getUniqueId();
 
             if (hitBlockTime.containsKey(uuid) && System.currentTimeMillis() < hitBlockTime.get(uuid)) {
-                // Attack Aura koruması: Bazen vuramaz veya hasar 1 kalbe (2 HP) düşer
-                if (Math.random() < 0.5) {
+                // Vuruş engellendi yazısı tamamen kaldırıldı, sadece hasar 1 kalbe (2 HP) düşürülüyor veya pas geçiliyor
+                if (Math.random() < 0.4) {
                     event.setCancelled(true);
-                    attacker.sendMessage(ChatColor.RED + "AxoGuard: Attack Aura koruması nedeniyle vuruşunuz engellendi!");
                     return;
                 } else {
-                    event.setDamage(Math.min(event.getDamage(), 2.0)); // Maksimum 1 kalp vurabilsin
+                    event.setDamage(Math.min(event.getDamage(), 2.0)); 
                 }
             }
 
@@ -420,6 +419,7 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
                 LivingEntity victim = (LivingEntity) event.getEntity();
                 double distance = attacker.getLocation().distance(victim.getLocation());
 
+                // Attack Aura ve Reach (uzaktan vurma) koruması (3.8 blok üstü reach/aura sayılır)
                 if (distance > 3.8 && attacker.getGameMode() != GameMode.CREATIVE) {
                     flagPlayer(attacker, "Attack Aura / Reach");
                 }
@@ -441,10 +441,9 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
             flagPlayer(player, "Speed");
         }
 
-        // Flight / Elytra hile koruması (Arada takılacak, uçamayacak)
+        // Flight açıldığında takılacak ve doğrudan AxoAC Kick Menüsü ile atılacak
         if (to.getY() - from.getY() > 1.35 && !player.isFlying() && !player.getLocation().getBlock().getType().isSolid()) {
             event.setTo(from);
-            player.sendMessage(ChatColor.RED + "Bu sunucuda uçma açık değil! Flight tespit edildi.");
             flagPlayer(player, "Flight / Elytra Move");
         }
     }
@@ -482,7 +481,6 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
             return true;
         }
 
-        // Logları görme komutu (/axologs - Herkes veya OP'lar görebilir)
         if (cmd.equals("axologs")) {
             player.sendMessage(ChatColor.DARK_RED + "=== AXOGUARD HİLE İHLAL LİSTESİ ===");
             if (violations.isEmpty()) {
@@ -502,6 +500,7 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
             return true;
         }
 
+        // /bot spawn ve /bot kapa (Zırh askısı yerine tam Steve / Zombie NPC formunda, ölümsüz ve vurulabilir)
         if (cmd.equals("bot")) {
             UUID uuid = player.getUniqueId();
             if (args.length > 0 && args[0].equalsIgnoreCase("spawn")) {
@@ -509,15 +508,14 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
                     player.sendMessage(ChatColor.RED + "Zaten aktif bir AxoBot'un var! Önce /bot kapa yazmalısın.");
                     return true;
                 }
-                ArmorStand bot = player.getWorld().spawn(player.getLocation(), ArmorStand.class);
+                Zombie bot = player.getWorld().spawn(player.getLocation(), Zombie.class);
                 bot.setCustomName(ChatColor.AQUA + "AxoBot");
                 bot.setCustomNameVisible(true);
+                bot.setBaby(false);
                 bot.setInvulnerable(false);
-                bot.setGravity(false);
-                bot.setVisible(true);
-                bot.setMarker(false);
+                bot.setAI(false); // Hareket etmez, sabit durur (NPC gibi)
                 playerBotMap.put(uuid, bot.getUniqueId());
-                player.sendMessage(ChatColor.GREEN + "Steve görünümlü AxoBot çağrıldı!");
+                player.sendMessage(ChatColor.GREEN + "Steve görünümlü AxoBot NPC çağrıldı!");
                 return true;
             } else if (args.length > 0 && args[0].equalsIgnoreCase("kapa")) {
                 UUID botUuid = playerBotMap.remove(uuid);
@@ -536,6 +534,7 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
             }
         }
 
+        // /bothava ve /bothava kapa (20 blok yukarıda sabit duran Steve NPC Hava Botu)
         if (cmd.equals("bothava")) {
             UUID uuid = player.getUniqueId();
             if (args.length > 0 && args[0].equalsIgnoreCase("kapa")) {
@@ -558,14 +557,15 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
                     return true;
                 }
                 Location airLoc = player.getLocation().add(0, 20, 0);
-                ArmorStand airBot = player.getWorld().spawn(airLoc, ArmorStand.class);
+                Zombie airBot = player.getWorld().spawn(airLoc, Zombie.class);
                 airBot.setCustomName(ChatColor.LIGHT_PURPLE + "AxoBot");
                 airBot.setCustomNameVisible(true);
+                airBot.setBaby(false);
                 airBot.setInvulnerable(false);
+                airBot.setAI(false);
                 airBot.setGravity(false);
-                airBot.setVisible(true);
                 playerAirBotMap.put(uuid, airBot.getUniqueId());
-                player.sendMessage(ChatColor.GREEN + "20 blok yukarıda Hava Botu oluşturuldu!");
+                player.sendMessage(ChatColor.GREEN + "20 blok yukarıda Hava Botu NPC oluşturuldu!");
                 return true;
             }
         }
