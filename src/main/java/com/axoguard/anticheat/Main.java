@@ -97,7 +97,7 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
 
         int ping = getPing(player);
 
-        String alertMsg = ChatColor.GOLD + "AxoAC efendim, " + 
+        String alertMsg = ChatColor.GOLD + "AxoBot efendim, " + 
                 ChatColor.YELLOW + player.getName() + " " +
                 ChatColor.RED + "adlı oyuncuda " + 
                 ChatColor.DARK_RED + hackType + " " +
@@ -192,12 +192,15 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
             target.kickPlayer(banScreen);
         }
 
+        // İstediğin Kırmızı Kutu Şeklinde Renkli Bildirim Formatı (ID Yok, AxoCraft)
         Bukkit.broadcastMessage(ChatColor.GRAY + targetName + " ÖLDÜRÜLDÜ.");
-        Bukkit.broadcastMessage(ChatColor.GRAY + "" + ChatColor.BOLD + "SÜRELİ YASAKLAMA BİLDİRİMİ");
-        Bukkit.broadcastMessage(ChatColor.GRAY + "🗡 YASAKLANAN " + ChatColor.RED + targetName);
+        Bukkit.broadcastMessage(ChatColor.DARK_RED + "---------------------------------------------");
+        Bukkit.broadcastMessage(ChatColor.RED + "" + ChatColor.BOLD + "AXOCRAFT - SÜRELİ YASAKLAMA BİLDİRİMİ");
         Bukkit.broadcastMessage(ChatColor.GRAY + "🔨 YASAKLAYAN " + ChatColor.AQUA + executor);
+        Bukkit.broadcastMessage(ChatColor.GRAY + "🗡 YASAKLANAN " + ChatColor.RED + targetName);
         Bukkit.broadcastMessage(ChatColor.GRAY + "🏷 SEBEP " + ChatColor.LIGHT_PURPLE + reason);
-        Bukkit.broadcastMessage(ChatColor.GRAY + "⌛ SÜRE " + ChatColor.LIGHT_PURPLE + detailedDuration);
+        Bukkit.broadcastMessage(ChatColor.GRAY + "⌛ SÜRE " + ChatColor.GREEN + detailedDuration);
+        Bukkit.broadcastMessage(ChatColor.DARK_RED + "---------------------------------------------");
     }
 
     private void executeIpBan(String targetName, String executor, String durationStr, String reason) {
@@ -282,11 +285,14 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
 
         String detailedDuration = formatDurationDetailed(durationStr);
 
-        Bukkit.broadcastMessage(ChatColor.GRAY + "" + ChatColor.BOLD + "SÜRELİ MUTE BİLDİRİMİ");
-        Bukkit.broadcastMessage(ChatColor.GRAY + "🎙 MUTELENEN " + ChatColor.RED + targetName);
-        Bukkit.broadcastMessage(ChatColor.GRAY + "🔨 MUTELENEN " + ChatColor.AQUA + executor);
+        // İstediğin Kırmızı Kutu Şeklinde Mute Bildirimi (Önce Yetkili, Sonra Mutelenen)
+        Bukkit.broadcastMessage(ChatColor.DARK_RED + "---------------------------------------------");
+        Bukkit.broadcastMessage(ChatColor.RED + "" + ChatColor.BOLD + "AXOCRAFT - SÜRELİ MUTE BİLDİRİMİ");
+        Bukkit.broadcastMessage(ChatColor.GRAY + "🔨 MUTELENEN YETKİLİ " + ChatColor.AQUA + executor);
+        Bukkit.broadcastMessage(ChatColor.GRAY + "🎙 MUTELENEN OYUNCU " + ChatColor.RED + targetName);
         Bukkit.broadcastMessage(ChatColor.GRAY + "🏷 SEBEP " + ChatColor.LIGHT_PURPLE + reason);
-        Bukkit.broadcastMessage(ChatColor.GRAY + "⌛ SÜRE " + ChatColor.LIGHT_PURPLE + detailedDuration);
+        Bukkit.broadcastMessage(ChatColor.GRAY + "⌛ SÜRE " + ChatColor.GREEN + detailedDuration);
+        Bukkit.broadcastMessage(ChatColor.DARK_RED + "---------------------------------------------");
 
         target.sendMessage(ChatColor.RED + "Sohbet yetkiniz " + detailedDuration + " süreyle kısıtlandı!");
     }
@@ -317,6 +323,7 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
             long expireTime = mutedPlayers.get(uuid);
             if (System.currentTimeMillis() < expireTime) {
                 event.setCancelled(true);
+                // Muteli oyuncu konuşmaya çalıştığında ilk mute bildirimini/uyarısını göster
                 player.sendMessage(ChatColor.RED + "Şu anda mutelisiniz! Sohbete yazı yazamazsınız.");
                 return;
             } else {
@@ -389,8 +396,9 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
                 LivingEntity victim = (LivingEntity) event.getEntity();
                 double distance = attacker.getLocation().distance(victim.getLocation());
 
-                if (distance > 3.9 && attacker.getGameMode() != GameMode.CREATIVE) {
-                    flagPlayer(attacker, "Hitbox / Reach");
+                // Attack Aura / Reach / Hitbox Tespiti
+                if (distance > 3.8 && attacker.getGameMode() != GameMode.CREATIVE) {
+                    flagPlayer(attacker, "Attack Aura / Reach");
                 }
             }
         }
@@ -560,10 +568,12 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
 
             mutedPlayers.remove(targetUuid);
 
-            // Mute açıldığında resimdeki stilde sohbet bildirimi
-            Bukkit.broadcastMessage(ChatColor.GRAY + "" + ChatColor.BOLD + "MUTE KALDIRILDI BİLDİRİMİ");
-            Bukkit.broadcastMessage(ChatColor.GRAY + "🎙 MUTESİ AÇILAN " + ChatColor.RED + args[0]);
+            // İstediğin Kırmızı Kutu Şeklinde Mute Açılma Bildirimi
+            Bukkit.broadcastMessage(ChatColor.DARK_RED + "---------------------------------------------");
+            Bukkit.broadcastMessage(ChatColor.RED + "" + ChatColor.BOLD + "AXOCRAFT - MUTE KALDIRILDI BİLDİRİMİ");
             Bukkit.broadcastMessage(ChatColor.GRAY + "🔨 YETKİLİ " + ChatColor.AQUA + player.getName());
+            Bukkit.broadcastMessage(ChatColor.GRAY + "🎙 MUTESİ AÇILAN " + ChatColor.RED + args[0]);
+            Bukkit.broadcastMessage(ChatColor.DARK_RED + "---------------------------------------------");
 
             if (target != null && target.isOnline()) {
                 target.sendMessage(ChatColor.GREEN + "Muteniz yetkili tarafından kaldırıldı, artık yazabilirsiniz.");
@@ -670,7 +680,7 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
             } else if (args.length == 2) {
                 return Arrays.asList("1g", "3g", "7g", "12h", "1h", "1d", "30s");
             } else if (args.length == 3) {
-                return Arrays.asList("Hile_Kullanımı", "Küfür/Hakaret", "Aşırı_Spam", "Sohbet_Kuralları");
+                return Arrays.asList("Attack_Aura", "Hile_Kullanımı", "Küfür/Hakaret", "Aşırı_Spam");
             }
         } else if (cmd.equals("muteaç")) {
             if (args.length == 1) {
