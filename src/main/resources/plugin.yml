@@ -1,32 +1,42 @@
 name: AxoGuard
-version: 2.0
+version: 1.0
 main: com.axoguard.anticheat.Main
-api-version: 1.16
+api-version: 1.20
+
 commands:
-  report:
-    description: Oyuncu sikayet et
-    usage: /report <oyuncu>
-  reports:
-    description: Sikayet edilenleri listele
-    usage: /reports
-  banla:
-    description: Oyuncuyu banla
-    usage: /banla <oyuncu> <sure> <sebep>
-  banla-ip:
-    description: Oyuncuya IP ban at
-    usage: /banla-ip <oyuncu> <sure> <sebep>
-  ban-ip:
-    description: IP ban ac
-    usage: /ban-ip <ip>
-  banaç:
-    description: Oyuncu ban ac
-    usage: /banaç <oyuncu>
-  mutele:
-    description: Oyuncuyu mutele
-    usage: /mutele <oyuncu> <sure> <sebep>
-  muteaç:
-    description: Oyuncunun mutesini ac
-    usage: /muteaç <oyuncu>
   axobot:
-    description: AxoBot izleme komutu
-    usage: /axobot izle <id>
+    description: AxoBot izleme sistemi
+    permission: axoguard.admin
+  report:
+    description: Oyuncu şikayet etme komutu
+  reports:
+    description: Şikayet edilen oyuncuları listeleme
+    permission: axoguard.admin
+  banla:
+    description: Süreli ban atma komutu
+    permission: axoguard.admin
+  banla-ip:
+    description: IP ban atma komutu
+    permission: axoguard.admin
+  ban-ip:
+    description: IP ban kaldırma komutu
+    permission: axoguard.admin
+  banaç:
+    description: Oyuncunun banını açma komutu
+    permission: axoguard.admin
+  banaç-ip:
+    description: IP adresinin banını açma komutu
+    permission: axoguard.admin
+  mutele:
+    description: Süreli mute atma komutu
+    permission: axoguard.admin
+  muteaç:
+    description: Mute kaldırma komutu
+    permission: axoguard.admin
+  bot:
+    description: Steve görünümlü AxoBot spawn/kapa komutu
+    permission: axoguard.admin
+  bothava:
+    description: Havada sabit duran koruma botu spawn/kapa komutu
+    permission: axoguard.admin
+
