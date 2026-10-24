@@ -14,6 +14,8 @@ import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
 import org.bukkit.command.TabCompleter;
+import org.bukkit.entity.ArmorStand;
+import org.bukkit.entity.Entity;
 import org.bukkit.entity.IronGolem;
 import org.bukkit.entity.LivingEntity;
 import org.bukkit.entity.Player;
@@ -21,6 +23,7 @@ import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.block.BlockBreakEvent;
 import org.bukkit.event.entity.EntityDamageByEntityEvent;
+import org.bukkit.event.entity.EntityDamageEvent;
 import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.player.AsyncPlayerChatEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
@@ -56,6 +59,10 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
     private final Set<String> reportSet = new HashSet<>();
     private final Set<UUID> activeBotSession = new HashSet<>();
     
+    // Bot Takip Sistemleri (Steve NPC Benzeri Botlar için ArmorStand & Custom NPC mantığı)
+    private final Map<UUID, UUID> playerBotMap = new HashMap<>();
+    private final Map<UUID, UUID> playerAirBotMap = new HashMap<>();
+    
     private final Map<UUID, Integer> diamondBreakCount = new HashMap<>();
     private final Map<UUID, Long> diamondResetTimer = new HashMap<>();
 
@@ -71,7 +78,7 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
             this.getServer().getMessenger().registerIncomingPluginChannel(this, "minecraft:brand", this);
         } catch (Exception ignored) {}
 
-        String[] cmds = {"axobot", "report", "reports", "banla", "banla-ip", "ban-ip", "banaç", "banaç-ip", "mutele", "muteaç"};
+        String[] cmds = {"axobot", "report", "reports", "banla", "banla-ip", "ban-ip", "banaç", "banaç-ip", "mutele", "muteaç", "bot", "bothava"};
         for (String cmd : cmds) {
             if (getCommand(cmd) != null) {
                 getCommand(cmd).setExecutor(this);
@@ -192,7 +199,6 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
             target.kickPlayer(banScreen);
         }
 
-        // İstediğin Kırmızı Kutu Şeklinde Renkli Bildirim Formatı (ID Yok, AxoCraft)
         Bukkit.broadcastMessage(ChatColor.GRAY + targetName + " ÖLDÜRÜLDÜ.");
         Bukkit.broadcastMessage(ChatColor.DARK_RED + "---------------------------------------------");
         Bukkit.broadcastMessage(ChatColor.RED + "" + ChatColor.BOLD + "AXOCRAFT - SÜRELİ YASAKLAMA BİLDİRİMİ");
@@ -257,6 +263,17 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
         }
     }
 
+    @EventHandler
+    public void onEntityDamage(EntityDamageEvent event) {
+        Entity entity = event.getEntity();
+        if (playerBotMap.containsValue(entity.getUniqueId()) || playerAirBotMap.containsValue(entity.getUniqueId())) {
+            event.setCancelled(true);
+            if (entity instanceof LivingEntity) {
+                ((LivingEntity) entity).setHealth(((LivingEntity) entity).getMaxHealth());
+            }
+        }
+    }
+
     @Override
     public void onPluginMessageReceived(String channel, Player player, byte[] message) {
         if (channel.equalsIgnoreCase("MC|Brand") || channel.equalsIgnoreCase("minecraft:brand")) {
@@ -285,7 +302,6 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
 
         String detailedDuration = formatDurationDetailed(durationStr);
 
-        // İstediğin Kırmızı Kutu Şeklinde Mute Bildirimi (Önce Yetkili, Sonra Mutelenen)
         Bukkit.broadcastMessage(ChatColor.DARK_RED + "---------------------------------------------");
         Bukkit.broadcastMessage(ChatColor.RED + "" + ChatColor.BOLD + "AXOCRAFT - SÜRELİ MUTE BİLDİRİMİ");
         Bukkit.broadcastMessage(ChatColor.GRAY + "🔨 MUTELENEN YETKİLİ " + ChatColor.AQUA + executor);
@@ -323,7 +339,6 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
             long expireTime = mutedPlayers.get(uuid);
             if (System.currentTimeMillis() < expireTime) {
                 event.setCancelled(true);
-                // Muteli oyuncu konuşmaya çalıştığında ilk mute bildirimini/uyarısını göster
                 player.sendMessage(ChatColor.RED + "Şu anda mutelisiniz! Sohbete yazı yazamazsınız.");
                 return;
             } else {
@@ -339,10 +354,10 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
             
             Bukkit.getScheduler().runTask(this, () -> {
                 String botReply;
-                String lower = msg.toLowerCase();
+                String lower = msg.toLowerCase().trim();
                 
-                if (lower.contains("selamün aleyküm") || lower.contains("selamun aleykum") || lower.contains("selam")) {
-                    botReply = "AxoBot: Aleykümselam efendim, hoş geldiniz!";
+                if (lower.equals("sa") || lower.contains("selamün aleyküm") || lower.contains("selamun aleykum") || lower.contains("selam")) {
+                    botReply = "AxoBot: Aleykümselam as napıon?";
                 } else if (lower.contains("nasılsın") || lower.contains("nasıl gidiyor")) {
                     botReply = "AxoBot: Hamdolsun efendim, AxoCraft sunucusunu korumaya devam ediyorum ya siz?";
                 } else if (lower.contains("hile mi") || lower.contains("vuruyor mu") || lower.contains("sence hilemi")) {
@@ -396,7 +411,6 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
                 LivingEntity victim = (LivingEntity) event.getEntity();
                 double distance = attacker.getLocation().distance(victim.getLocation());
 
-                // Attack Aura / Reach / Hitbox Tespiti
                 if (distance > 3.8 && attacker.getGameMode() != GameMode.CREATIVE) {
                     flagPlayer(attacker, "Attack Aura / Reach");
                 }
@@ -420,7 +434,7 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
 
         if (to.getY() - from.getY() > 1.35 && !player.isFlying() && !player.getLocation().getBlock().getType().isSolid()) {
             event.setTo(from);
-            flagPlayer(player, "Fly");
+            flagPlayer(player, "Flight / Elytra Move");
         }
     }
 
@@ -455,6 +469,76 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
             reportSet.add(target.getName());
             openReportMenu(player, target.getName());
             return true;
+        }
+
+        // /bot spawn ve /bot kapa (Steve NPC benzeri, sabit duran, ölümsüz, vurulabilen AxoBot)
+        if (cmd.equals("bot")) {
+            UUID uuid = player.getUniqueId();
+            if (args.length > 0 && args[0].equalsIgnoreCase("spawn")) {
+                if (playerBotMap.containsKey(uuid)) {
+                    player.sendMessage(ChatColor.RED + "Zaten aktif bir AxoBot'un var! Önce /bot kapa yazmalısın.");
+                    return true;
+                }
+                ArmorStand bot = player.getWorld().spawn(player.getLocation(), ArmorStand.class);
+                bot.setCustomName(ChatColor.AQUA + "AxoBot");
+                bot.setCustomNameVisible(true);
+                bot.setInvulnerable(false);
+                bot.setGravity(false);
+                bot.setVisible(true);
+                bot.setMarker(false);
+                playerBotMap.put(uuid, bot.getUniqueId());
+                player.sendMessage(ChatColor.GREEN + "Steve görünümlü AxoBot çağrıldı!");
+                return true;
+            } else if (args.length > 0 && args[0].equalsIgnoreCase("kapa")) {
+                UUID botUuid = playerBotMap.remove(uuid);
+                if (botUuid != null) {
+                    for (Entity e : player.getWorld().getEntities()) {
+                        if (e.getUniqueId().equals(botUuid)) {
+                            e.remove();
+                            break;
+                        }
+                    }
+                    player.sendMessage(ChatColor.GREEN + "AxoBot kapatıldı.");
+                } else {
+                    player.sendMessage(ChatColor.RED + "Aktif bir botun bulunmuyor!");
+                }
+                return true;
+            }
+        }
+
+        // /bothava ve /bothava kapa (20 blok yukarıda sabit duran, ölümsüz, vurulabilen Hava Botu)
+        if (cmd.equals("bothava")) {
+            UUID uuid = player.getUniqueId();
+            if (args.length > 0 && args[0].equalsIgnoreCase("kapa")) {
+                UUID botUuid = playerAirBotMap.remove(uuid);
+                if (botUuid != null) {
+                    for (Entity e : player.getWorld().getEntities()) {
+                        if (e.getUniqueId().equals(botUuid)) {
+                            e.remove();
+                            break;
+                        }
+                    }
+                    player.sendMessage(ChatColor.GREEN + "Havdaki AxoBot kapatıldı.");
+                } else {
+                    player.sendMessage(ChatColor.RED + "Aktif bir hava botun bulunmuyor!");
+                }
+                return true;
+            } else {
+                if (playerAirBotMap.containsKey(uuid)) {
+                    player.sendMessage(ChatColor.RED + "Zaten havada aktif bir botun var!");
+                    return true;
+                }
+                Location airLoc = player.getLocation().add(0, 20, 0);
+                ArmorStand airBot = player.getWorld().spawn(airLoc, ArmorStand.class);
+                airBot.setCustomName(ChatColor.LIGHT_PURPLE + "AxoBot");
+                airBot.setCustomNameVisible(true);
+                airBot.setInvulnerable(false);
+                airBot.setGravity(false);
+                airBot.setVisible(true);
+                playerAirBotMap.put(uuid, airBot.getUniqueId());
+                player.sendMessage(ChatColor.GREEN + "20 blok yukarıda Hava Botu oluşturuldu!");
+                return true;
+            }
         }
 
         if (!player.isOp()) {
@@ -568,7 +652,6 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
 
             mutedPlayers.remove(targetUuid);
 
-            // İstediğin Kırmızı Kutu Şeklinde Mute Açılma Bildirimi
             Bukkit.broadcastMessage(ChatColor.DARK_RED + "---------------------------------------------");
             Bukkit.broadcastMessage(ChatColor.RED + "" + ChatColor.BOLD + "AXOCRAFT - MUTE KALDIRILDI BİLDİRİMİ");
             Bukkit.broadcastMessage(ChatColor.GRAY + "🔨 YETKİLİ " + ChatColor.AQUA + player.getName());
@@ -591,7 +674,7 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
                         player.teleport(target.getLocation());
                         activeBotSession.add(player.getUniqueId());
                         player.sendMessage(ChatColor.AQUA + "AxoBot #" + id + " ile " + target.getName() + " yanına ışınlandınız.");
-                        player.sendMessage(ChatColor.YELLOW + "AxoBot: Efendim, Aleykümselam! İzlemeye başladık, sohbete yazarak benimle konuşabilirsiniz.");
+                        player.sendMessage(ChatColor.YELLOW + "AxoBot: Efendim, Aleykümselam as napıon? İzlemeye başladık, sohbete yazarak benimle konuşabilirsiniz.");
                     } else {
                         player.sendMessage(ChatColor.RED + "Geçersiz Bot ID veya hedef oyunda değil!");
                     }
@@ -658,7 +741,7 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
                 player.closeInventory();
                 player.teleport(target.getLocation());
                 activeBotSession.add(player.getUniqueId());
-                player.sendMessage(ChatColor.AQUA + "AxoBot: Aleykümselam efendim! " + target.getName() + " oyuncusunun yanına ışınlandık, izlemeye başlıyoruz.");
+                player.sendMessage(ChatColor.AQUA + "AxoBot: Aleykümselam as napıon? " + target.getName() + " oyuncusunun yanına ışınlandık, izlemeye başlıyoruz.");
             } else {
                 player.sendMessage(ChatColor.RED + "Bu oyuncu artık oyunda değil!");
             }
@@ -680,7 +763,7 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
             } else if (args.length == 2) {
                 return Arrays.asList("1g", "3g", "7g", "12h", "1h", "1d", "30s");
             } else if (args.length == 3) {
-                return Arrays.asList("Attack_Aura", "Hile_Kullanımı", "Küfür/Hakaret", "Aşırı_Spam");
+                return Arrays.asList("Attack_Aura", "Flight_Elytra", "Speed", "Hile_Kullanımı", "Küfür/Hakaret", "Aşırı_Spam");
             }
         } else if (cmd.equals("muteaç")) {
             if (args.length == 1) {
@@ -714,6 +797,10 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
             }
         } else if (cmd.equals("axobot")) {
             if (args.length == 1) return Collections.singletonList("izle");
+        } else if (cmd.equals("bot")) {
+            if (args.length == 1) return Arrays.asList("spawn", "kapa");
+        } else if (cmd.equals("bothava")) {
+            if (args.length == 1) return Collections.singletonList("kapa");
         }
 
         return Collections.emptyList();
