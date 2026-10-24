@@ -34,9 +34,13 @@ commands:
     description: Mute kaldırma komutu
     permission: axoguard.admin
   bot:
-    description: Steve görünümlü AxoBot spawn/kapa komutu
+    description: Steve görünümlü ölümsüz AxoBot spawn/kapa komutu
     permission: axoguard.admin
   bothava:
     description: Havada sabit duran koruma botu spawn/kapa komutu
     permission: axoguard.admin
+  axologs:
+    description: Oyuncuların hile loglarını ve günlük geçmişini gösteren menü komutu
+    permission: axoguard.admin
+
 
