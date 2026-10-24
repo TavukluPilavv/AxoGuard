@@ -59,7 +59,6 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
     private final Set<String> reportSet = new HashSet<>();
     private final Set<UUID> activeBotSession = new HashSet<>();
     
-    // Bot Takip Sistemleri (Steve NPC Benzeri Botlar için ArmorStand & Custom NPC mantığı)
     private final Map<UUID, UUID> playerBotMap = new HashMap<>();
     private final Map<UUID, UUID> playerAirBotMap = new HashMap<>();
     
@@ -78,7 +77,7 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
             this.getServer().getMessenger().registerIncomingPluginChannel(this, "minecraft:brand", this);
         } catch (Exception ignored) {}
 
-        String[] cmds = {"axobot", "report", "reports", "banla", "banla-ip", "ban-ip", "banaç", "banaç-ip", "mutele", "muteaç", "bot", "bothava"};
+        String[] cmds = {"axobot", "report", "reports", "banla", "banla-ip", "ban-ip", "banaç", "banaç-ip", "mutele", "muteaç", "bot", "bothava", "axologs"};
         for (String cmd : cmds) {
             if (getCommand(cmd) != null) {
                 getCommand(cmd).setExecutor(this);
@@ -91,7 +90,8 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
     }
 
     private void flagPlayer(Player player, String hackType) {
-        if (player.hasPermission("axoguard.bypass") || player.getGameMode() == GameMode.CREATIVE || player.getGameMode() == GameMode.SPECTATOR) return;
+        // OP ve Yaratıcı/İzleyici modları kontrol ediliyor (Artık OP'lar da taranıyor!)
+        if (player.getGameMode() == GameMode.CREATIVE || player.getGameMode() == GameMode.SPECTATOR) return;
 
         UUID uuid = player.getUniqueId();
         int logCount = violations.getOrDefault(uuid, 0) + 1;
@@ -126,13 +126,16 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
             }
         }
 
-        if (logCount >= 12) {
+        // İstediğin eşikler: Attack Aura için 8x, diğerleri için 13x
+        int maxLog = hackType.toLowerCase().contains("aura") ? 8 : 13;
+
+        if (logCount >= maxLog) {
             int kicks = kickCountMap.getOrDefault(uuid, 0) + 1;
             kickCountMap.put(uuid, kicks);
             violations.put(uuid, 0);
 
             if (kicks >= 3) {
-                executeBan(player.getName(), "Console", "14g", "Hile Kullanımı (3. İhtar)");
+                executeBan(player.getName(), "Console", "14g", "Hile Kullanımı (3 Kick / İhtar)");
             } else {
                 kickPlayer(player, hackType);
             }
@@ -375,7 +378,7 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
     @EventHandler
     public void onBlockBreak(BlockBreakEvent event) {
         Player player = event.getPlayer();
-        if (player.hasPermission("axoguard.bypass") || player.getGameMode() == GameMode.CREATIVE) return;
+        if (player.getGameMode() == GameMode.CREATIVE) return;
 
         Material type = event.getBlock().getType();
         if (type.name().contains("DIAMOND") || type.name().contains("EMERALD") || type.name().contains("ANCIENT_DEBRIS")) {
@@ -403,8 +406,14 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
             UUID uuid = attacker.getUniqueId();
 
             if (hitBlockTime.containsKey(uuid) && System.currentTimeMillis() < hitBlockTime.get(uuid)) {
-                event.setCancelled(true);
-                return;
+                // Attack Aura koruması: Bazen vuramaz veya hasar 1 kalbe (2 HP) düşer
+                if (Math.random() < 0.5) {
+                    event.setCancelled(true);
+                    attacker.sendMessage(ChatColor.RED + "AxoGuard: Attack Aura koruması nedeniyle vuruşunuz engellendi!");
+                    return;
+                } else {
+                    event.setDamage(Math.min(event.getDamage(), 2.0)); // Maksimum 1 kalp vurabilsin
+                }
             }
 
             if (event.getEntity() instanceof Player || event.getEntity() instanceof IronGolem) {
@@ -421,7 +430,7 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
     @EventHandler
     public void onMove(PlayerMoveEvent event) {
         Player player = event.getPlayer();
-        if (player.hasPermission("axoguard.bypass") || player.getGameMode() == GameMode.CREATIVE || player.getGameMode() == GameMode.SPECTATOR) return;
+        if (player.getGameMode() == GameMode.CREATIVE || player.getGameMode() == GameMode.SPECTATOR) return;
 
         Location from = event.getFrom();
         Location to = event.getTo();
@@ -432,8 +441,10 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
             flagPlayer(player, "Speed");
         }
 
+        // Flight / Elytra hile koruması (Arada takılacak, uçamayacak)
         if (to.getY() - from.getY() > 1.35 && !player.isFlying() && !player.getLocation().getBlock().getType().isSolid()) {
             event.setTo(from);
+            player.sendMessage(ChatColor.RED + "Bu sunucuda uçma açık değil! Flight tespit edildi.");
             flagPlayer(player, "Flight / Elytra Move");
         }
     }
@@ -471,7 +482,26 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
             return true;
         }
 
-        // /bot spawn ve /bot kapa (Steve NPC benzeri, sabit duran, ölümsüz, vurulabilen AxoBot)
+        // Logları görme komutu (/axologs - Herkes veya OP'lar görebilir)
+        if (cmd.equals("axologs")) {
+            player.sendMessage(ChatColor.DARK_RED + "=== AXOGUARD HİLE İHLAL LİSTESİ ===");
+            if (violations.isEmpty()) {
+                player.sendMessage(ChatColor.GREEN + "Şu anda aktif ihlal logu bulunmuyor.");
+            } else {
+                for (Map.Entry<UUID, Integer> entry : violations.entrySet()) {
+                    Player p = Bukkit.getPlayer(entry.getKey());
+                    String name = p != null ? p.getName() : Bukkit.getOfflinePlayer(entry.getKey()).getName();
+                    player.sendMessage(ChatColor.YELLOW + "- " + name + ": " + ChatColor.RED + entry.getValue() + " ihlal puanı");
+                }
+            }
+            return true;
+        }
+
+        if (!player.isOp()) {
+            player.sendMessage(ChatColor.RED + "Böyle bir komut bulunamadı!");
+            return true;
+        }
+
         if (cmd.equals("bot")) {
             UUID uuid = player.getUniqueId();
             if (args.length > 0 && args[0].equalsIgnoreCase("spawn")) {
@@ -506,7 +536,6 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
             }
         }
 
-        // /bothava ve /bothava kapa (20 blok yukarıda sabit duran, ölümsüz, vurulabilen Hava Botu)
         if (cmd.equals("bothava")) {
             UUID uuid = player.getUniqueId();
             if (args.length > 0 && args[0].equalsIgnoreCase("kapa")) {
@@ -518,7 +547,7 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
                             break;
                         }
                     }
-                    player.sendMessage(ChatColor.GREEN + "Havdaki AxoBot kapatıldı.");
+                    player.sendMessage(ChatColor.GREEN + "Havadaki AxoBot kapatıldı.");
                 } else {
                     player.sendMessage(ChatColor.RED + "Aktif bir hava botun bulunmuyor!");
                 }
@@ -539,11 +568,6 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
                 player.sendMessage(ChatColor.GREEN + "20 blok yukarıda Hava Botu oluşturuldu!");
                 return true;
             }
-        }
-
-        if (!player.isOp()) {
-            player.sendMessage(ChatColor.RED + "Böyle bir komut bulunamadı!");
-            return true;
         }
 
         if (cmd.equals("reports")) {
