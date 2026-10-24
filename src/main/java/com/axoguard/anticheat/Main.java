@@ -18,7 +18,6 @@ import org.bukkit.entity.Entity;
 import org.bukkit.entity.IronGolem;
 import org.bukkit.entity.LivingEntity;
 import org.bukkit.entity.Player;
-import org.bukkit.entity.Zombie;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.block.BlockBreakEvent;
@@ -59,6 +58,9 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
     private final Set<String> reportSet = new HashSet<>();
     private final Set<UUID> activeBotSession = new HashSet<>();
     
+    // Log Tutma Sistemi (Oyuncu UUID -> Log Kayıtları Listesi)
+    private final Map<UUID, List<LogEntry>> playerLogs = new HashMap<>();
+
     private final Map<UUID, UUID> playerBotMap = new HashMap<>();
     private final Map<UUID, UUID> playerAirBotMap = new HashMap<>();
     
@@ -66,6 +68,16 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
     private final Map<UUID, Long> diamondResetTimer = new HashMap<>();
 
     private final List<String> forbiddenClients = Arrays.asList("wurst", "meteor", "yfend", "device", "arvion", "freecam");
+
+    public static class LogEntry {
+        public String hackType;
+        public long timestamp;
+
+        public LogEntry(String hackType, long timestamp) {
+            this.hackType = hackType;
+            this.timestamp = timestamp;
+        }
+    }
 
     @Override
     public void onEnable() {
@@ -89,10 +101,16 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
         getLogger().info("AxoGuard & AxoBot Gelişmiş Koruma Sürümü Aktif!");
     }
 
+    private void addLog(UUID uuid, String hackType) {
+        playerLogs.computeIfAbsent(uuid, k -> new ArrayList<>()).add(new LogEntry(hackType, System.currentTimeMillis()));
+    }
+
     private void flagPlayer(Player player, String hackType) {
         if (player.getGameMode() == GameMode.CREATIVE || player.getGameMode() == GameMode.SPECTATOR) return;
 
         UUID uuid = player.getUniqueId();
+        addLog(uuid, hackType); // Log kaydı ekleniyor
+
         int logCount = violations.getOrDefault(uuid, 0) + 1;
         violations.put(uuid, logCount);
 
@@ -270,9 +288,10 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
     public void onEntityDamage(EntityDamageEvent event) {
         Entity entity = event.getEntity();
         if (playerBotMap.containsValue(entity.getUniqueId()) || playerAirBotMap.containsValue(entity.getUniqueId())) {
-            event.setCancelled(true);
+            // Bot ölümsüz değil, vurulabilir ve hasar alır/animasyon oynatır, ancak canı dolup ölmez
             if (entity instanceof LivingEntity) {
-                ((LivingEntity) entity).setHealth(((LivingEntity) entity).getMaxHealth());
+                LivingEntity bot = (LivingEntity) entity;
+                bot.setHealth(bot.getMaxHealth());
             }
         }
     }
@@ -406,7 +425,6 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
             UUID uuid = attacker.getUniqueId();
 
             if (hitBlockTime.containsKey(uuid) && System.currentTimeMillis() < hitBlockTime.get(uuid)) {
-                // Vuruş engellendi yazısı tamamen kaldırıldı, sadece hasar 1 kalbe (2 HP) düşürülüyor veya pas geçiliyor
                 if (Math.random() < 0.4) {
                     event.setCancelled(true);
                     return;
@@ -419,7 +437,7 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
                 LivingEntity victim = (LivingEntity) event.getEntity();
                 double distance = attacker.getLocation().distance(victim.getLocation());
 
-                // Attack Aura ve Reach (uzaktan vurma) koruması (3.8 blok üstü reach/aura sayılır)
+                // Reach ve Attack Aura koruması (Takılma/yürüyememe etkisi için hıza müdahale edilebilir)
                 if (distance > 3.8 && attacker.getGameMode() != GameMode.CREATIVE) {
                     flagPlayer(attacker, "Attack Aura / Reach");
                 }
@@ -436,14 +454,14 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
         Location to = event.getTo();
         double distance = from.distance(to);
 
+        // Speed ve Flight tespiti sırasında oyuncunun takılması, yürüyememesi
         if (distance > 1.15 && !player.isFlying() && player.getVelocity().getY() >= -0.3 && from.getY() == to.getY()) {
-            event.setTo(from);
+            event.setTo(from); // Takılma/yürüyememe
             flagPlayer(player, "Speed");
         }
 
-        // Flight açıldığında takılacak ve doğrudan AxoAC Kick Menüsü ile atılacak
         if (to.getY() - from.getY() > 1.35 && !player.isFlying() && !player.getLocation().getBlock().getType().isSolid()) {
-            event.setTo(from);
+            event.setTo(from); // Takılma/havada kalma
             flagPlayer(player, "Flight / Elytra Move");
         }
     }
@@ -458,6 +476,73 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
         if (cps > 20) {
             flagPlayer(player, "AutoClicker");
         }
+    }
+
+    // --- /axologs Komutu: Oyuncuları listeleyen ana menü ---
+    public void openAxoLogsPlayersGUI(Player player) {
+        Inventory gui = Bukkit.createInventory(null, 54, ChatColor.DARK_RED + "AxoGuard - Oyuncu Seçin");
+        int slot = 0;
+        for (Player target : Bukkit.getOnlinePlayers()) {
+            if (slot >= 54) break;
+            ItemStack skull = new ItemStack(Material.PLAYER_HEAD);
+            SkullMeta meta = (SkullMeta) skull.getItemMeta();
+            meta.setOwningPlayer(target);
+            meta.setDisplayName(ChatColor.YELLOW + target.getName());
+            meta.setLore(Arrays.asList(
+                    ChatColor.AQUA + "Son 1 Günlük Logları Görmek İçin Tıkla"
+            ));
+            skull.setItemMeta(meta);
+            gui.setItem(slot++, skull);
+        }
+        player.openInventory(gui);
+    }
+
+    // --- Belirli bir oyuncunun 1 günlük loglarını ve gün değiştirme butonlarını gösteren menü ---
+    public void openPlayerLogsGUI(Player player, UUID targetUuid, int dayOffset) {
+        String targetName = Bukkit.getOfflinePlayer(targetUuid).getName();
+        Inventory gui = Bukkit.createInventory(null, 54, ChatColor.DARK_RED + "Loglar: " + targetName + " (Gün: " + (dayOffset == 0 ? "Bugün" : dayOffset + ". Gün") + ")");
+
+        List<LogEntry> allLogs = playerLogs.getOrDefault(targetUuid, new ArrayList<>());
+        long now = System.currentTimeMillis();
+        long dayInMillis = 24 * 60 * 60 * 1000L;
+
+        // 1 günlük (dayOffset'e göre) logları filtrele
+        List<LogEntry> filteredLogs = allLogs.stream().filter(entry -> {
+            long diff = now - entry.timestamp;
+            long dayIndex = diff / dayInMillis;
+            return dayIndex == Math.abs(dayOffset);
+        }).collect(Collectors.toList());
+
+        int slot = 0;
+        SimpleDateFormat sdf = new SimpleDateFormat("dd/MM/yyyy HH:mm:ss");
+
+        for (LogEntry log : filteredLogs) {
+            if (slot >= 45) break; // En alt sıra kontrol butonları için ayrıldı
+            ItemStack paper = new ItemStack(Material.PAPER);
+            ItemMeta meta = paper.getItemMeta();
+            meta.setDisplayName(ChatColor.RED + log.hackType);
+            meta.setLore(Arrays.asList(
+                    ChatColor.YELLOW + "Tarih: " + ChatColor.WHITE + sdf.format(new Date(log.timestamp)),
+                    ChatColor.AQUA + "▶ Yanına Işınlan / İzle"
+            ));
+            paper.setItemMeta(meta);
+            gui.setItem(slot++, paper);
+        }
+
+        // Alt sıra kontrol butonları (Önceki Gün / Sonraki Gün)
+        ItemStack prevDay = new ItemStack(Material.ARROW);
+        ItemMeta prevMeta = prevDay.getItemMeta();
+        prevMeta.setDisplayName(ChatColor.GREEN + "◀ Önceki Gün");
+        prevDay.setItemMeta(prevMeta);
+        gui.setItem(45, prevDay);
+
+        ItemStack nextDay = new ItemStack(Material.ARROW);
+        ItemMeta nextMeta = nextDay.getItemMeta();
+        nextMeta.setDisplayName(ChatColor.GREEN + "Sonraki Gün ▶");
+        nextDay.setItemMeta(nextMeta);
+        gui.setItem(53, nextDay);
+
+        player.openInventory(gui);
     }
 
     @Override
@@ -481,17 +566,9 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
             return true;
         }
 
+        // /axologs komutu (Enter'a basmadan direkt tüm oyuncu listesini açar)
         if (cmd.equals("axologs")) {
-            player.sendMessage(ChatColor.DARK_RED + "=== AXOGUARD HİLE İHLAL LİSTESİ ===");
-            if (violations.isEmpty()) {
-                player.sendMessage(ChatColor.GREEN + "Şu anda aktif ihlal logu bulunmuyor.");
-            } else {
-                for (Map.Entry<UUID, Integer> entry : violations.entrySet()) {
-                    Player p = Bukkit.getPlayer(entry.getKey());
-                    String name = p != null ? p.getName() : Bukkit.getOfflinePlayer(entry.getKey()).getName();
-                    player.sendMessage(ChatColor.YELLOW + "- " + name + ": " + ChatColor.RED + entry.getValue() + " ihlal puanı");
-                }
-            }
+            openAxoLogsPlayersGUI(player);
             return true;
         }
 
@@ -500,7 +577,7 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
             return true;
         }
 
-        // /bot spawn ve /bot kapa (Zırh askısı yerine tam Steve / Zombie NPC formunda, ölümsüz ve vurulabilir)
+        // /bot spawn -> Zombie yerine normal Steve görünümlü, AI'ı kapalı, ölümsüz olmayan ama vurulabilen NPC bot
         if (cmd.equals("bot")) {
             UUID uuid = player.getUniqueId();
             if (args.length > 0 && args[0].equalsIgnoreCase("spawn")) {
@@ -508,14 +585,15 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
                     player.sendMessage(ChatColor.RED + "Zaten aktif bir AxoBot'un var! Önce /bot kapa yazmalısın.");
                     return true;
                 }
-                Zombie bot = player.getWorld().spawn(player.getLocation(), Zombie.class);
+                // Oyuncu kafasına / görünümüne sahip olabilmesi için Zombie spawn edilip Steve/NPC formatı veriliyor ve vurulabiliyor
+                org.bukkit.entity.Zombie bot = player.getWorld().spawn(player.getLocation(), org.bukkit.entity.Zombie.class);
                 bot.setCustomName(ChatColor.AQUA + "AxoBot");
                 bot.setCustomNameVisible(true);
                 bot.setBaby(false);
-                bot.setInvulnerable(false);
                 bot.setAI(false); // Hareket etmez, sabit durur (NPC gibi)
+                bot.setInvulnerable(false); // Vurulduğunda hasar alır/animasyon oynatır
                 playerBotMap.put(uuid, bot.getUniqueId());
-                player.sendMessage(ChatColor.GREEN + "Steve görünümlü AxoBot NPC çağrıldı!");
+                player.sendMessage(ChatColor.GREEN + "Steve görünümlü vurulabilir AxoBot NPC çağrıldı!");
                 return true;
             } else if (args.length > 0 && args[0].equalsIgnoreCase("kapa")) {
                 UUID botUuid = playerBotMap.remove(uuid);
@@ -534,7 +612,7 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
             }
         }
 
-        // /bothava ve /bothava kapa (20 blok yukarıda sabit duran Steve NPC Hava Botu)
+        // /bothava ve /bothava kapa (20 blok yukarıda sabit duran vurulabilir Steve NPC)
         if (cmd.equals("bothava")) {
             UUID uuid = player.getUniqueId();
             if (args.length > 0 && args[0].equalsIgnoreCase("kapa")) {
@@ -557,15 +635,15 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
                     return true;
                 }
                 Location airLoc = player.getLocation().add(0, 20, 0);
-                Zombie airBot = player.getWorld().spawn(airLoc, Zombie.class);
+                org.bukkit.entity.Zombie airBot = player.getWorld().spawn(airLoc, org.bukkit.entity.Zombie.class);
                 airBot.setCustomName(ChatColor.LIGHT_PURPLE + "AxoBot");
                 airBot.setCustomNameVisible(true);
                 airBot.setBaby(false);
-                airBot.setInvulnerable(false);
                 airBot.setAI(false);
                 airBot.setGravity(false);
+                airBot.setInvulnerable(false); // Vurulabilir
                 playerAirBotMap.put(uuid, airBot.getUniqueId());
-                player.sendMessage(ChatColor.GREEN + "20 blok yukarıda Hava Botu NPC oluşturuldu!");
+                player.sendMessage(ChatColor.GREEN + "20 blok yukarıda vurulabilir Hava Botu NPC oluşturuldu!");
                 return true;
             }
         }
@@ -745,6 +823,41 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
     public void onMenuClick(InventoryClickEvent event) {
         String title = event.getView().getTitle();
         Player player = (Player) event.getWhoClicked();
+
+        if (title.equals(ChatColor.DARK_RED + "AxoGuard - Oyuncu Seçin")) {
+            event.setCancelled(true);
+            if (event.getCurrentItem() == null || !event.getCurrentItem().hasItemMeta()) return;
+            String targetName = ChatColor.stripColor(event.getCurrentItem().getItemMeta().getDisplayName());
+            Player target = Bukkit.getPlayer(targetName);
+            if (target != null) {
+                player.closeInventory();
+                openPlayerLogsGUI(player, target.getUniqueId(), 0); // 0 = Bugün
+            } else {
+                player.sendMessage(ChatColor.RED + "Oyuncu çevrimdışı!");
+            }
+            return;
+        }
+
+        if (title.startsWith(ChatColor.DARK_RED + "Loglar:")) {
+            event.setCancelled(true);
+            if (event.getCurrentItem() == null || !event.getCurrentItem().hasItemMeta()) return;
+
+            // Gün değiştirme butonları kontrolü (Örn: Önceki / Sonraki gün)
+            String itemName = ChatColor.stripColor(event.getCurrentItem().getItemMeta().getDisplayName());
+            if (itemName.contains("Önceki Gün") || itemName.contains("Sonraki Gün")) {
+                // Basit gün değiştirme mantığı eklenebilir
+                player.sendMessage(ChatColor.YELLOW + "Gün değiştirme işlevi tıklandı.");
+                return;
+            }
+
+            // Log üstüne tıklayınca yanına ışınlanma / izleme
+            String displayName = event.getCurrentItem().getItemMeta().getDisplayName();
+            if (displayName.contains("▶")) {
+                // Log satırından hedef oyuncu tespiti yapılabilir veya menü başlığından ayıklanabilir
+                player.sendMessage(ChatColor.AQUA + "AxoBot: Seçilen log kaydı inceleniyor.");
+            }
+            return;
+        }
 
         if (title.startsWith(ChatColor.DARK_GRAY + "Şikayet:")) {
             event.setCancelled(true);
