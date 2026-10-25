@@ -114,10 +114,11 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
     private void removeEntityByUuid(UUID entityUuid) {
         if (entityUuid == null) return;
         for (org.bukkit.World world : Bukkit.getWorlds()) {
-            Entity entity = world.getEntity(entityUuid);
-            if (entity != null) {
-                entity.remove();
-                return;
+            for (Entity entity : world.getEntities()) {
+                if (entity.getUniqueId().equals(entityUuid)) {
+                    entity.remove();
+                    return;
+                }
             }
         }
     }
