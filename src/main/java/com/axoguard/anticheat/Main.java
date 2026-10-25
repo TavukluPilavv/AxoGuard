@@ -18,7 +18,8 @@ import org.bukkit.entity.Entity;
 import org.bukkit.entity.IronGolem;
 import org.bukkit.entity.LivingEntity;
 import org.bukkit.entity.Player;
-import org.bukkit.entity.ArmorStand;
+import org.bukkit.entity.Zombie;
+import org.bukkit.entity.Llama;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.block.BlockBreakEvent;
@@ -151,11 +152,48 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
             violations.put(uuid, 0);
 
             if (kicks >= 3) {
-                executeBan(player.getName(), "Console", "14g", "Hile Kullanımı (3 Kick / İhtar)");
+                // 3. Kick sonrası özel ban sekansı (Takılma, havaya kalkma, eşya düşürme ve lama botlar)
+                triggerBanSequence(player, hackType);
             } else {
                 kickPlayer(player, hackType);
             }
         }
+    }
+
+    private void triggerBanSequence(Player player, String reason) {
+        player.sendMessage(ChatColor.RED + "AxoAC: Hile sınırını aştınız! Sistem ban prosedürünü uyguluyor...");
+        
+        // 1. Adım: Oyuncuyu dondur (Yürüyemez, takılır)
+        player.setWalkSpeed(0f);
+        player.setFlySpeed(0f);
+
+        // 2. Adım: 2 saniye sonra havaya kaldır ve eşyalarını yere düşürtüp lama bot çağır
+        Bukkit.getScheduler().runTaskLater(this, () -> {
+            if (player.isOnline()) {
+                player.setVelocity(new org.bukkit.util.Vector(0, 1.2, 0)); // Havaya kalkma
+                
+                // Eşyaları yere düşürt
+                for (ItemStack item : player.getInventory().getContents()) {
+                    if (item != null && item.getType() != Material.AIR) {
+                        player.getWorld().dropItemNaturally(player.getLocation(), item);
+                    }
+                }
+                player.getInventory().clear();
+
+                // Lama Bot çağrısı (Kılıçlı Lama botlar yanına gelir)
+                Llama lamaBot = player.getWorld().spawn(player.getLocation().add(2, 0, 2), Llama.class);
+                lamaBot.setCustomName(ChatColor.RED + "AxoBot Güvenlik Muhafızı");
+                lamaBot.setCustomNameVisible(true);
+                lamaBot.getEquipment().setItemInMainHand(new ItemStack(Material.NETHERITE_SWORD));
+            }
+        }, 40L); // 2 saniye
+
+        // 3. Adım: 4 saniye sonra ban ekranını at
+        Bukkit.getScheduler().runTaskLater(this, () -> {
+            if (player.isOnline()) {
+                executeBan(player.getName(), "Console", "14g", "Hile Kullanımı (3 Kick Sonrası Ban)");
+            }
+        }, 80L); // 4 saniye
     }
 
     private int getPing(Player player) {
@@ -168,15 +206,13 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
     }
 
     private void kickPlayer(Player player, String hackType) {
-        // "Uzaklaştırıldınız" kelimesi tamamen kaldırıldı, özel AxoAC Kick Menüsü ekranı
         String kickReason = ChatColor.RED + "AxoAC - Güvenlik Sistemi\n\n" +
                 ChatColor.YELLOW + "Sunucumuzda hile kullanımı tespit edildi!\n" +
                 ChatColor.RED + "Sebep: " + ChatColor.YELLOW + hackType + "\n\n" +
-                ChatColor.WHITE + "İşlem uygulandı.\n" +
                 ChatColor.AQUA + "discord.gg/axocraft";
 
         player.kickPlayer(kickReason);
-        Bukkit.broadcastMessage(ChatColor.DARK_RED + "[AxoGuard] " + ChatColor.YELLOW + player.getName() + ChatColor.RED + " hile (" + hackType + ") nedeniyle atıldı.");
+        Bukkit.broadcastMessage(ChatColor.DARK_RED + "[AxoGuard] " + ChatColor.YELLOW + player.getName() + ChatColor.RED + " hile (" + hackType + ") tespit edildi.");
     }
 
     private String formatDurationDetailed(String durationStr) {
@@ -250,6 +286,9 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
         UUID uuid = player.getUniqueId();
         String ip = player.getAddress() != null ? player.getAddress().getAddress().getHostAddress() : "";
 
+        player.setWalkSpeed(0.2f); // Hızını normale sıfırla
+        player.setFlySpeed(0.1f);
+
         if (bannedIps.contains(ip)) {
             long expireTime = ipBannedUntil.getOrDefault(ip, 0L);
             if (System.currentTimeMillis() < expireTime) {
@@ -288,7 +327,7 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
     public void onEntityDamage(EntityDamageEvent event) {
         Entity entity = event.getEntity();
         if (playerBotMap.containsValue(entity.getUniqueId()) || playerAirBotMap.containsValue(entity.getUniqueId())) {
-            // Bot ölümsüzdür (1 milyon kere de vurulsa ölmez, canı anında fulllenir) ancak vurulabilir (hasar animasyonu oynar)
+            // Bot ölümsüzdür (1 milyon kere vurulsa bile canı hemen fulllenir ölmez) ancak vurulabilir[span_5](start_span)[span_5](end_span)
             if (entity instanceof LivingEntity) {
                 LivingEntity bot = (LivingEntity) entity;
                 bot.setHealth(bot.getMaxHealth());
@@ -433,15 +472,15 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
                 }
             }
 
-            // Botlar üzerinde hile (Attack Aura / Reach) tespiti
             Entity victimEntity = event.getEntity();
             boolean isBotTarget = playerBotMap.containsValue(victimEntity.getUniqueId()) || playerAirBotMap.containsValue(victimEntity.getUniqueId());
 
             if (victimEntity instanceof Player || victimEntity instanceof IronGolem || isBotTarget) {
                 double distance = attacker.getLocation().distance(victimEntity.getLocation());
 
+                // Bot üzerinde veya oyuncu üzerinde Reach / Attack Aura tespiti
                 if (distance > 3.8 && attacker.getGameMode() != GameMode.CREATIVE) {
-                    flagPlayer(attacker, "Attack Aura / Reach (Bot Hedef Alındı)");
+                    flagPlayer(attacker, "Attack Aura / Reach");
                 }
             }
         }
@@ -456,7 +495,7 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
         Location to = event.getTo();
         double distance = from.distance(to);
 
-        // Speed ve Flight tespitinde oyuncunun takılması ve yürüyememesi
+        // Speed ve Flight tespiti sırasında oyuncunun takılması ve yürüyememesi
         if (distance > 1.15 && !player.isFlying() && player.getVelocity().getY() >= -0.3 && from.getY() == to.getY()) {
             event.setTo(from);
             flagPlayer(player, "Speed");
@@ -574,7 +613,7 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
             return true;
         }
 
-        // /bot spawn -> Kesinlikle Steve görünümlü, zombi olmayan, ölümsüz ama vurulabilen NPC bot
+        // /bot spawn -> Kesinlikle görseldeki gibi Steve görünümlü, zombi olmayan, ölümsüz ama vurulabilen NPC bot[span_6](start_span)[span_6](end_span)
         if (cmd.equals("bot")) {
             UUID uuid = player.getUniqueId();
             if (args.length > 0 && args[0].equalsIgnoreCase("spawn")) {
@@ -582,13 +621,22 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
                     player.sendMessage(ChatColor.RED + "Zaten aktif bir AxoBot'un var! Önce /bot kapa yazmalısın.");
                     return true;
                 }
-                ArmorStand bot = player.getWorld().spawn(player.getLocation(), ArmorStand.class);
-                bot.setCustomName(ChatColor.AQUA + "AxoBot");
+                // Görseldeki WonAc AFK_Bot tarzı Steve/Oyuncu kafasına sahip NPC bot
+                Player target = Bukkit.getPlayer(uuid);
+                org.bukkit.entity.ArmorStand bot = player.getWorld().spawn(player.getLocation(), org.bukkit.entity.ArmorStand.class);
+                bot.setCustomName(ChatColor.YELLOW + "[WonAc] AFK_Bot");
                 bot.setCustomNameVisible(true);
-                bot.setInvulnerable(false); // Vurulabilir (hasar alır/animasyon oynar)
+                bot.setInvulnerable(false); // Vurulabilir
                 bot.setGravity(false);
                 bot.setVisible(true);
-                bot.setMarker(false);
+                
+                // Baş kısmına Steve kafası veriliyor
+                ItemStack head = new ItemStack(Material.PLAYER_HEAD);
+                SkullMeta meta = (SkullMeta) head.getItemMeta();
+                meta.setOwningPlayer(target);
+                head.setItemMeta(meta);
+                bot.setHelmet(head);
+
                 playerBotMap.put(uuid, bot.getUniqueId());
                 player.sendMessage(ChatColor.GREEN + "Steve görünümlü, ölümsüz ve vurulabilir AxoBot NPC çağrıldı!");
                 return true;
@@ -609,7 +657,7 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
             }
         }
 
-        // /bothava ve /bothava kapa -> 20 blok yukarıda sabit duran Steve görünümlü, vurulabilir hava botu
+        // /bothava ve /bothava kapa -> 20 blok yukarısında havada sabit duran Steve görünümlü vurulabilir bot
         if (cmd.equals("bothava")) {
             UUID uuid = player.getUniqueId();
             if (args.length > 0 && args[0].equalsIgnoreCase("kapa")) {
@@ -632,12 +680,19 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
                     return true;
                 }
                 Location airLoc = player.getLocation().add(0, 20, 0);
-                ArmorStand airBot = player.getWorld().spawn(airLoc, ArmorStand.class);
-                airBot.setCustomName(ChatColor.LIGHT_PURPLE + "AxoBot");
+                org.bukkit.entity.ArmorStand airBot = player.getWorld().spawn(airLoc, org.bukkit.entity.ArmorStand.class);
+                airBot.setCustomName(ChatColor.LIGHT_PURPLE + "[WonAc] AFK_Bot");
                 airBot.setCustomNameVisible(true);
                 airBot.setInvulnerable(false); // Vurulabilir
                 airBot.setGravity(false);
                 airBot.setVisible(true);
+
+                ItemStack head = new ItemStack(Material.PLAYER_HEAD);
+                SkullMeta meta = (SkullMeta) head.getItemMeta();
+                meta.setOwningPlayer(player);
+                head.setItemMeta(meta);
+                airBot.setHelmet(head);
+
                 playerAirBotMap.put(uuid, airBot.getUniqueId());
                 player.sendMessage(ChatColor.GREEN + "20 blok yukarıda vurulabilir Hava Botu NPC oluşturuldu!");
                 return true;
