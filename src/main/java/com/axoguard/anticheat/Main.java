@@ -28,6 +28,7 @@ import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.player.AsyncPlayerChatEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
+import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.event.player.PlayerMoveEvent;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemStack;
@@ -61,6 +62,7 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
     private final Set<UUID> activeBotSession = new HashSet<>();
     
     private final Map<UUID, List<LogEntry>> playerLogs = new HashMap<>();
+    private final Map<UUID, Integer> playerLogOffsets = new HashMap<>();
 
     private final Map<UUID, UUID> playerBotMap = new HashMap<>();
     private final Map<UUID, UUID> playerAirBotMap = new HashMap<>();
@@ -144,7 +146,7 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
             }
         }
 
-        int maxLog = hackType.toLowerCase().contains("aura") ? 6 : 13;
+        int maxLog = (hackType.toLowerCase().contains("aura") || hackType.toLowerCase().contains("elytratarget")) ? 6 : 13;
 
         if (logCount >= maxLog) {
             int kicks = kickCountMap.getOrDefault(uuid, 0) + 1;
@@ -160,8 +162,6 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
     }
 
     private void triggerBanSequence(Player player, String reason) {
-        player.sendMessage(ChatColor.RED + "AxoAC: Hile sınırını aştınız! Sistem ban prosedürünü uyguluyor...");
-        
         player.setWalkSpeed(0f);
         player.setFlySpeed(0f);
 
@@ -176,18 +176,23 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
                 }
                 player.getInventory().clear();
 
-                Llama lamaBot = player.getWorld().spawn(player.getLocation().add(2, 0, 2), Llama.class);
+                Location lamaLoc = player.getLocation().add(player.getLocation().getDirection().multiply(2));
+                Llama lamaBot = player.getWorld().spawn(lamaLoc, Llama.class);
                 lamaBot.setCustomName(ChatColor.RED + "AxoBot Güvenlik Muhafızı");
                 lamaBot.setCustomNameVisible(true);
                 lamaBot.getEquipment().setItemInMainHand(new ItemStack(Material.NETHERITE_SWORD));
-            }
-        }, 40L);
+                lamaBot.setTarget(player);
 
-        Bukkit.getScheduler().runTaskLater(this, () -> {
-            if (player.isOnline()) {
-                executeBan(player.getName(), "Console", "14g", "Hile Kullanımı (3 Kick Sonrası Ban)");
+                Bukkit.getScheduler().runTaskLater(this, () -> {
+                    if (player.isOnline()) {
+                        executeBan(player.getName(), "Console", "14g", "Hile Kullanımı (3 Kick Sonrası Ban)");
+                    }
+                    if (lamaBot.isValid()) {
+                        lamaBot.remove();
+                    }
+                }, 40L);
             }
-        }, 80L);
+        }, 20L);
     }
 
     private int getPing(Player player) {
@@ -280,6 +285,8 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
         UUID uuid = player.getUniqueId();
         String ip = player.getAddress() != null ? player.getAddress().getAddress().getHostAddress() : "";
 
+        event.setJoinMessage(ChatColor.GREEN + "+ " + player.getName());
+
         player.setWalkSpeed(0.2f);
         player.setFlySpeed(0.1f);
 
@@ -287,7 +294,15 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
             long expireTime = ipBannedUntil.getOrDefault(ip, 0L);
             if (System.currentTimeMillis() < expireTime) {
                 String reason = ipBanReasons.getOrDefault(ip, "IP Ban");
-                player.kickPlayer(ChatColor.RED + "Bu IP adresinden girişler yasaklanmıştır!\nSebep: " + reason);
+                String dateStr = new SimpleDateFormat("yyyy/MM/dd").format(new Date());
+                String banScreen = ChatColor.GOLD + "Bağlantı koptu\n\n" +
+                        ChatColor.GOLD + "" + ChatColor.BOLD + "BU SUNUCUDAN YASAKLANDINIZ\n\n" +
+                        ChatColor.WHITE + "⏰ TARİH: " + ChatColor.YELLOW + dateStr + "\n" +
+                        ChatColor.WHITE + "🔨 YASAKLAYAN: " + ChatColor.AQUA + "Console\n" +
+                        ChatColor.WHITE + "🏷 SEBEP: " + ChatColor.LIGHT_PURPLE + reason + "\n\n" +
+                        ChatColor.AQUA + "İTİRAZ EDEBİLİRSİNİZ:\n" +
+                        ChatColor.WHITE + "discord.gg/axocraft";
+                player.kickPlayer(banScreen);
                 return;
             } else {
                 bannedIps.remove(ip);
@@ -318,12 +333,17 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
     }
 
     @EventHandler
+    public void onQuit(PlayerQuitEvent event) {
+        event.setQuitMessage(ChatColor.RED + "- " + event.getPlayer().getName());
+    }
+
+    @EventHandler
     public void onEntityDamage(EntityDamageEvent event) {
         Entity entity = event.getEntity();
         if (playerBotMap.containsValue(entity.getUniqueId()) || playerAirBotMap.containsValue(entity.getUniqueId())) {
             if (entity instanceof LivingEntity) {
                 LivingEntity bot = (LivingEntity) entity;
-                bot.setHealth(bot.getMaxHealth()); // Bot ölümsüzdür, vurulabilir ama canı anında yenilenir
+                bot.setHealth(bot.getMaxHealth());
             }
         }
     }
@@ -468,7 +488,6 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
             Entity victimEntity = event.getEntity();
             boolean isBotTarget = playerBotMap.containsValue(victimEntity.getUniqueId()) || playerAirBotMap.containsValue(victimEntity.getUniqueId());
 
-            // Sunucudaki TÜM OYUNCULAR, MOBlar ve BOTLAR koruma kapsamındadır
             if (victimEntity instanceof LivingEntity || isBotTarget) {
                 Location attackerLoc = attacker.getLocation();
                 Location victimLoc = victimEntity.getLocation();
@@ -478,9 +497,17 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
                 Vector lookDir = attackerLoc.getDirection().normalize();
                 double dot = lookDir.dot(toVictim);
 
-                if ((distance > 3.8 || dot < -0.15) && attacker.getGameMode() != GameMode.CREATIVE) {
-                    event.setDamage(Math.min(event.getDamage(), 2.0)); 
-                    flagPlayer(attacker, "Attack Aura / 360 / Kalkan Kırma");
+                // GELİŞTİRİLMİŞ ATTACK AURA KONTROLÜ:
+                // Normal oyuncuların zıplayarak vurması, etrafında dönmesi (360) veya kalkan kırması legit kabul edilir.
+                // Sadece oyuncunun görüş açısının tamamen arkasındaysa (dot < -0.35) ve mesafe 4.0 bloğun üzerindeyse hile sayılır.
+                if (attacker.getGameMode() != GameMode.CREATIVE) {
+                    boolean isImpossibleDistance = distance > 4.2;
+                    boolean isBackHitWithoutAim = distance > 3.2 && dot < -0.35;
+
+                    if (isImpossibleDistance || isBackHitWithoutAim) {
+                        event.setDamage(Math.min(event.getDamage(), 2.0)); 
+                        flagPlayer(attacker, "Attack Aura");
+                    }
                 }
             }
         }
@@ -496,12 +523,12 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
         double distance = from.distance(to);
 
         if (player.isGliding()) {
-            boolean hasFirework = player.getInventory().getItemInMainHand().getType() == Material.FIREWORK_ROCKET ||
-                                  player.getInventory().getItemInOffHand().getType() == Material.FIREWORK_ROCKET;
-            
-            if (!hasFirework && distance > 1.8 && to.getY() >= from.getY()) {
+            boolean hasFireworkInHand = player.getInventory().getItemInMainHand().getType() == Material.FIREWORK_ROCKET ||
+                                      player.getInventory().getItemInOffHand().getType() == Material.FIREWORK_ROCKET;
+
+            if (distance > 1.8 && to.getY() >= from.getY() && !hasFireworkInHand) {
                 event.setTo(from);
-                flagPlayer(player, "ElytraTarget (Fişeksiz Hızlanma)");
+                flagPlayer(player, "ElytraTargetC");
                 return;
             }
         }
@@ -548,8 +575,10 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
     }
 
     public void openPlayerLogsGUI(Player player, UUID targetUuid, int dayOffset) {
+        playerLogOffsets.put(player.getUniqueId(), dayOffset);
         String targetName = Bukkit.getOfflinePlayer(targetUuid).getName();
-        Inventory gui = Bukkit.createInventory(null, 54, ChatColor.DARK_RED + "Loglar: " + targetName + " (Gün: " + (dayOffset == 0 ? "Bugün" : dayOffset + ". Gün") + ")");
+        String dayLabel = (dayOffset == 0) ? "Bugün" : (Math.abs(dayOffset) + ". Gün Önce");
+        Inventory gui = Bukkit.createInventory(null, 54, ChatColor.DARK_RED + "Loglar: " + targetName + " (" + dayLabel + ")");
 
         List<LogEntry> allLogs = playerLogs.getOrDefault(targetUuid, new ArrayList<>());
         long now = System.currentTimeMillis();
@@ -623,7 +652,6 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
             return true;
         }
 
-        // /bot spawn -> Gerçek oyuncu formunda, sınırsız canlı vurulabilen AFK botu ([WonAc] AFK_Bot)
         if (cmd.equals("bot")) {
             UUID uuid = player.getUniqueId();
             if (args.length > 0 && args[0].equalsIgnoreCase("spawn")) {
@@ -905,9 +933,20 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
             if (event.getCurrentItem() == null || !event.getCurrentItem().hasItemMeta()) return;
 
             String itemName = ChatColor.stripColor(event.getCurrentItem().getItemMeta().getDisplayName());
-            if (itemName.contains("Önceki Gün") || itemName.contains("Sonraki Gün")) {
-                player.sendMessage(ChatColor.YELLOW + "Gün değiştirme işlevi aktif.");
-                return;
+            String targetName = title.split(" \\(")[0].replace(ChatColor.DARK_RED + "Loglar: ", "").trim();
+            org.bukkit.OfflinePlayer targetOffline = Bukkit.getOfflinePlayer(targetName);
+            if (targetOffline == null) return;
+
+            int currentOffset = playerLogOffsets.getOrDefault(player.getUniqueId(), 0);
+
+            if (itemName.contains("Önceki Gün")) {
+                currentOffset++;
+                openPlayerLogsGUI(player, targetOffline.getUniqueId(), currentOffset);
+            } else if (itemName.contains("Sonraki Gün")) {
+                if (currentOffset > 0) {
+                    currentOffset--;
+                    openPlayerLogsGUI(player, targetOffline.getUniqueId(), currentOffset);
+                }
             }
             return;
         }
@@ -953,7 +992,7 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
             } else if (args.length == 2) {
                 return Arrays.asList("1g", "3g", "7g", "12h", "1h", "1d", "30s");
             } else if (args.length == 3) {
-                return Arrays.asList("Attack_Aura", "Flight_Elytra", "Speed", "ElytraTarget", "Hile_Kullanımı", "Küfür/Hakaret", "Aşırı_Spam");
+                return Arrays.asList("Attack_Aura", "Flight_Elytra", "Speed", "ElytraTargetC", "Hile_Kullanımı", "Küfür/Hakaret", "Aşırı_Spam");
             }
         } else if (cmd.equals("muteaç")) {
             if (args.length == 1) {
