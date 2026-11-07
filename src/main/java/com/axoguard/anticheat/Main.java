@@ -166,7 +166,6 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
         player.setFlySpeed(0f);
         player.setVelocity(new Vector(0, 0, 0));
 
-        // Eşyaları yere dökme ve temizleme
         for (ItemStack item : player.getInventory().getContents()) {
             if (item != null && item.getType() != Material.AIR) {
                 player.getWorld().dropItemNaturally(player.getLocation(), item);
@@ -174,7 +173,6 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
         }
         player.getInventory().clear();
 
-        // 3 adet lama muhafızın etrafta belirip tükürmesi ve yavaşça yukarı süzülme efekti
         List<Llama> lamas = new ArrayList<>();
         for (int i = 0; i < 3; i++) {
             double angle = i * ((Math.PI * 2) / 3);
@@ -187,7 +185,6 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
             lamas.add(lama);
         }
 
-        // Yavaşça yukarı süzülme görevi
         int taskId = Bukkit.getScheduler().runTaskTimer(this, () -> {
             if (player.isOnline()) {
                 Vector vel = player.getVelocity();
@@ -195,7 +192,6 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
             }
         }, 0L, 2L).getTaskId();
 
-        // Belirli süre sonra ban atma ve lamaları temizleme
         Bukkit.getScheduler().runTaskLater(this, () -> {
             Bukkit.getScheduler().cancelTask(taskId);
             for (Llama lama : lamas) {
@@ -297,7 +293,6 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
         UUID uuid = player.getUniqueId();
         String ip = player.getAddress() != null ? player.getAddress().getAddress().getHostAddress() : "";
 
-        // Doğrudan ban ekranı kontrolü (Sunucuya katılıyor yazısı görünmeden anında ban ekranı fırlatılır)
         if (bannedIps.contains(ip)) {
             long expireTime = ipBannedUntil.getOrDefault(ip, 0L);
             if (System.currentTimeMillis() < expireTime) {
@@ -514,11 +509,10 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
                 double dot = lookDir.dot(toVictim);
 
                 if (attacker.getGameMode() != GameMode.CREATIVE) {
-                    // Hileli vuruşlarda (kapsam dışı mesafe veya arka vuruşlar) kesinlikle log düşer
-                    boolean isImpossibleDistance = distance > 4.2;
-                    boolean isBackHitWithoutAim = distance > 3.2 && dot < -0.3;
+                    boolean isInvalidDistance = distance > 3.8;
+                    boolean isBadAngle = dot < 0.15;
 
-                    if (isImpossibleDistance || isBackHitWithoutAim) {
+                    if (isInvalidDistance || isBadAngle) {
                         event.setDamage(Math.min(event.getDamage(), 2.0)); 
                         flagPlayer(attacker, "Attack Aura");
                     }
@@ -536,12 +530,10 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
         Location to = event.getTo();
         double distance = from.distance(to);
 
-        // Elytra ve Fişeksiz Hızlanma / Uçuş Kontrolü (ElytraTargetC)
         if (player.isGliding()) {
             boolean hasFireworkInHand = player.getInventory().getItemInMainHand().getType() == Material.FIREWORK_ROCKET ||
                                       player.getInventory().getItemInOffHand().getType() == Material.FIREWORK_ROCKET;
 
-            // Elinde roket/fişek yokken havada süzülerek yukarı/ileri anormal hızla gidiyorsa ElytraTargetC logu düşer
             if (distance > 1.8 && to.getY() >= from.getY() && !hasFireworkInHand) {
                 event.setTo(from);
                 flagPlayer(player, "ElytraTargetC");
@@ -549,7 +541,6 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
             }
         }
 
-        // Normal elytra ile uçan oyunculara Speed veya Flight hatası verilmez, ayrı tutulmuştur
         if (!player.isGliding()) {
             if (distance > 1.15 && !player.isFlying() && player.getVelocity().getY() >= -0.3 && from.getY() == to.getY()) {
                 event.setTo(from);
@@ -694,7 +685,7 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
                 bot.getEquipment().setHelmet(head);
 
                 playerBotMap.put(uuid, bot.getUniqueId());
-                player.sendMessage(ChatColor.GREEN + "Gerçek Steve NPC formunda, ölümsüz ve vurulabilir AxoBot çağrıldı!");
+                player.sendMessage(ChatColor.GREEN + "Gerçek Steve NPC formunda, sınırsız canı olan ve vurulabilen AxoBot çağrıldı!");
                 return true;
             } else if (args.length > 0 && args[0].equalsIgnoreCase("kapa")) {
                 UUID botUuid = playerBotMap.remove(uuid);
@@ -752,7 +743,7 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
                 airBot.getEquipment().setHelmet(head);
 
                 playerAirBotMap.put(uuid, airBot.getUniqueId());
-                player.sendMessage(ChatColor.GREEN + "20 blok yukarıda vurulabilir Hava Botu NPC oluşturuldu!");
+                player.sendMessage(ChatColor.GREEN + "20 blok yukarıda sınırsız canı olan ve vurulabilen Hava Botu NPC oluşturuldu!");
                 return true;
             }
         }
