@@ -144,7 +144,6 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
             }
         }
 
-        // Attack Aura için sınır tam 6x yapıldı
         int maxLog = hackType.toLowerCase().contains("aura") ? 6 : 13;
 
         if (logCount >= maxLog) {
@@ -207,7 +206,7 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
                 ChatColor.AQUA + "discord.gg/axocraft";
 
         player.kickPlayer(kickReason);
-        Bukkit.broadcastMessage(ChatColor.DARK_RED + "[AxoGuard] " + ChatColor.YELLOW + player.getName() + ChatColor.RED + " hile (" + hackType + ") tespit edildi.");
+        Bukkit.broadcastMessage(ChatColor.DARK_RED + "[AxoGuard] " + ChatColor.YELLOW + player.getName() + ChatColor.RED + " hile (" + hackType + ") nedeniyle atıldı.");
     }
 
     private String formatDurationDetailed(String durationStr) {
@@ -324,7 +323,7 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
         if (playerBotMap.containsValue(entity.getUniqueId()) || playerAirBotMap.containsValue(entity.getUniqueId())) {
             if (entity instanceof LivingEntity) {
                 LivingEntity bot = (LivingEntity) entity;
-                bot.setHealth(bot.getMaxHealth()); // Bot ölümsüzdür, vurulabilir ama canı anında yenilenir[span_6](start_span)[span_6](end_span)
+                bot.setHealth(bot.getMaxHealth()); // Bot ölümsüzdür, vurulabilir ama canı anında yenilenir
             }
         }
     }
@@ -469,8 +468,8 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
             Entity victimEntity = event.getEntity();
             boolean isBotTarget = playerBotMap.containsValue(victimEntity.getUniqueId()) || playerAirBotMap.containsValue(victimEntity.getUniqueId());
 
-            // Moblar hariç tutuldu; sadece TÜM OYUNCULAR ve BOTLAR üzerinde koruma tetiklenir[span_7](start_span)[span_7](end_span)
-            if (victimEntity instanceof Player || isBotTarget) {
+            // Sunucudaki TÜM OYUNCULAR, MOBlar ve BOTLAR koruma kapsamındadır
+            if (victimEntity instanceof LivingEntity || isBotTarget) {
                 Location attackerLoc = attacker.getLocation();
                 Location victimLoc = victimEntity.getLocation();
                 double distance = attackerLoc.distance(victimLoc);
@@ -479,9 +478,8 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
                 Vector lookDir = attackerLoc.getDirection().normalize();
                 double dot = lookDir.dot(toVictim);
 
-                // 360 derece, arkaya vuruş, kalkan kırma veya hedefe bakmadan vurma (Aura / Reach)
                 if ((distance > 3.8 || dot < -0.15) && attacker.getGameMode() != GameMode.CREATIVE) {
-                    event.setDamage(Math.min(event.getDamage(), 2.0)); // Hileli vuruşlarda 1 kalp (2 HP) hasar verir
+                    event.setDamage(Math.min(event.getDamage(), 2.0)); 
                     flagPlayer(attacker, "Attack Aura / 360 / Kalkan Kırma");
                 }
             }
@@ -497,12 +495,23 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
         Location to = event.getTo();
         double distance = from.distance(to);
 
-        if (distance > 1.15 && !player.isFlying() && player.getVelocity().getY() >= -0.3 && from.getY() == to.getY()) {
+        if (player.isGliding()) {
+            boolean hasFirework = player.getInventory().getItemInMainHand().getType() == Material.FIREWORK_ROCKET ||
+                                  player.getInventory().getItemInOffHand().getType() == Material.FIREWORK_ROCKET;
+            
+            if (!hasFirework && distance > 1.8 && to.getY() >= from.getY()) {
+                event.setTo(from);
+                flagPlayer(player, "ElytraTarget (Fişeksiz Hızlanma)");
+                return;
+            }
+        }
+
+        if (distance > 1.15 && !player.isFlying() && !player.isGliding() && player.getVelocity().getY() >= -0.3 && from.getY() == to.getY()) {
             event.setTo(from);
             flagPlayer(player, "Speed");
         }
 
-        if (to.getY() - from.getY() > 1.35 && !player.isFlying() && !player.getLocation().getBlock().getType().isSolid()) {
+        if (to.getY() - from.getY() > 1.35 && !player.isFlying() && !player.isGliding() && !player.getLocation().getBlock().getType().isSolid()) {
             event.setTo(from);
             flagPlayer(player, "Flight / Elytra Move");
         }
@@ -614,7 +623,7 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
             return true;
         }
 
-        // /bot spawn -> Zombie tabanlı (Steve kafalı, kafası ve kolları hareket eden, sınırsız canlı vurulabilir [WonAc] AFK_Bot)[span_8](start_span)[span_8](end_span)
+        // /bot spawn -> Gerçek oyuncu formunda, sınırsız canlı vurulabilen AFK botu ([WonAc] AFK_Bot)
         if (cmd.equals("bot")) {
             UUID uuid = player.getUniqueId();
             if (args.length > 0 && args[0].equalsIgnoreCase("spawn")) {
@@ -657,7 +666,6 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
             }
         }
 
-        // /bothava ve /bothava kapa -> 20 blok yukarıda sabit duran Steve görünümlü vurulabilir bot
         if (cmd.equals("bothava")) {
             UUID uuid = player.getUniqueId();
             if (args.length > 0 && args[0].equalsIgnoreCase("kapa")) {
@@ -945,7 +953,7 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
             } else if (args.length == 2) {
                 return Arrays.asList("1g", "3g", "7g", "12h", "1h", "1d", "30s");
             } else if (args.length == 3) {
-                return Arrays.asList("Attack_Aura", "Flight_Elytra", "Speed", "Hile_Kullanımı", "Küfür/Hakaret", "Aşırı_Spam");
+                return Arrays.asList("Attack_Aura", "Flight_Elytra", "Speed", "ElytraTarget", "Hile_Kullanımı", "Küfür/Hakaret", "Aşırı_Spam");
             }
         } else if (cmd.equals("muteaç")) {
             if (args.length == 1) {
