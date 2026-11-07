@@ -164,35 +164,47 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
     private void triggerBanSequence(Player player, String reason) {
         player.setWalkSpeed(0f);
         player.setFlySpeed(0f);
+        player.setVelocity(new Vector(0, 0, 0));
 
-        Bukkit.getScheduler().runTaskLater(this, () -> {
-            if (player.isOnline()) {
-                player.setVelocity(new Vector(0, 1.2, 0));
-                
-                for (ItemStack item : player.getInventory().getContents()) {
-                    if (item != null && item.getType() != Material.AIR) {
-                        player.getWorld().dropItemNaturally(player.getLocation(), item);
-                    }
-                }
-                player.getInventory().clear();
-
-                Location lamaLoc = player.getLocation().add(player.getLocation().getDirection().multiply(2));
-                Llama lamaBot = player.getWorld().spawn(lamaLoc, Llama.class);
-                lamaBot.setCustomName(ChatColor.RED + "AxoBot Güvenlik Muhafızı");
-                lamaBot.setCustomNameVisible(true);
-                lamaBot.getEquipment().setItemInMainHand(new ItemStack(Material.NETHERITE_SWORD));
-                lamaBot.setTarget(player);
-
-                Bukkit.getScheduler().runTaskLater(this, () -> {
-                    if (player.isOnline()) {
-                        executeBan(player.getName(), "Console", "14g", "Hile Kullanımı (3 Kick Sonrası Ban)");
-                    }
-                    if (lamaBot.isValid()) {
-                        lamaBot.remove();
-                    }
-                }, 40L);
+        // Eşyaları yere dökme ve temizleme
+        for (ItemStack item : player.getInventory().getContents()) {
+            if (item != null && item.getType() != Material.AIR) {
+                player.getWorld().dropItemNaturally(player.getLocation(), item);
             }
-        }, 20L);
+        }
+        player.getInventory().clear();
+
+        // 3 adet lama muhafızın etrafta belirip tükürmesi ve yavaşça yukarı süzülme efekti
+        List<Llama> lamas = new ArrayList<>();
+        for (int i = 0; i < 3; i++) {
+            double angle = i * ((Math.PI * 2) / 3);
+            Location spawnLoc = player.getLocation().add(Math.cos(angle) * 3, 0, Math.sin(angle) * 3);
+            Llama lama = player.getWorld().spawn(spawnLoc, Llama.class);
+            lama.setCustomName(ChatColor.RED + "AxoBot Muhafız #" + (i + 1));
+            lama.setCustomNameVisible(true);
+            lama.setAI(false);
+            lama.setTarget(player);
+            lamas.add(lama);
+        }
+
+        // Yavaşça yukarı süzülme görevi
+        int taskId = Bukkit.getScheduler().runTaskTimer(this, () -> {
+            if (player.isOnline()) {
+                Vector vel = player.getVelocity();
+                player.setVelocity(new Vector(vel.getX(), 0.08, vel.getZ()));
+            }
+        }, 0L, 2L).getTaskId();
+
+        // Belirli süre sonra ban atma ve lamaları temizleme
+        Bukkit.getScheduler().runTaskLater(this, () -> {
+            Bukkit.getScheduler().cancelTask(taskId);
+            for (Llama lama : lamas) {
+                if (lama.isValid()) lama.remove();
+            }
+            if (player.isOnline()) {
+                executeBan(player.getName(), "Console", "14g", "Hile Kullanımı (3 Kick Sonrası Ban)");
+            }
+        }, 60L);
     }
 
     private int getPing(Player player) {
@@ -285,11 +297,7 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
         UUID uuid = player.getUniqueId();
         String ip = player.getAddress() != null ? player.getAddress().getAddress().getHostAddress() : "";
 
-        event.setJoinMessage(ChatColor.GREEN + "+ " + player.getName());
-
-        player.setWalkSpeed(0.2f);
-        player.setFlySpeed(0.1f);
-
+        // Doğrudan ban ekranı kontrolü (Sunucuya katılıyor yazısı görünmeden anında ban ekranı fırlatılır)
         if (bannedIps.contains(ip)) {
             long expireTime = ipBannedUntil.getOrDefault(ip, 0L);
             if (System.currentTimeMillis() < expireTime) {
@@ -303,6 +311,7 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
                         ChatColor.AQUA + "İTİRAZ EDEBİLİRSİNİZ:\n" +
                         ChatColor.WHITE + "discord.gg/axocraft";
                 player.kickPlayer(banScreen);
+                event.setJoinMessage(null);
                 return;
             } else {
                 bannedIps.remove(ip);
@@ -325,11 +334,18 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
                         ChatColor.WHITE + "discord.gg/axocraft";
 
                 player.kickPlayer(banScreen);
+                event.setJoinMessage(null);
+                return;
             } else {
                 bannedPlayers.remove(uuid);
                 banReasons.remove(uuid);
             }
         }
+
+        event.setJoinMessage(ChatColor.GREEN + "+ " + player.getName());
+
+        player.setWalkSpeed(0.2f);
+        player.setFlySpeed(0.1f);
     }
 
     @EventHandler
@@ -497,12 +513,10 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
                 Vector lookDir = attackerLoc.getDirection().normalize();
                 double dot = lookDir.dot(toVictim);
 
-                // GELİŞTİRİLMİŞ ATTACK AURA KONTROLÜ:
-                // Normal oyuncuların zıplayarak vurması, etrafında dönmesi (360) veya kalkan kırması legit kabul edilir.
-                // Sadece oyuncunun görüş açısının tamamen arkasındaysa (dot < -0.35) ve mesafe 4.0 bloğun üzerindeyse hile sayılır.
                 if (attacker.getGameMode() != GameMode.CREATIVE) {
+                    // Hileli vuruşlarda (kapsam dışı mesafe veya arka vuruşlar) kesinlikle log düşer
                     boolean isImpossibleDistance = distance > 4.2;
-                    boolean isBackHitWithoutAim = distance > 3.2 && dot < -0.35;
+                    boolean isBackHitWithoutAim = distance > 3.2 && dot < -0.3;
 
                     if (isImpossibleDistance || isBackHitWithoutAim) {
                         event.setDamage(Math.min(event.getDamage(), 2.0)); 
@@ -522,10 +536,12 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
         Location to = event.getTo();
         double distance = from.distance(to);
 
+        // Elytra ve Fişeksiz Hızlanma / Uçuş Kontrolü (ElytraTargetC)
         if (player.isGliding()) {
             boolean hasFireworkInHand = player.getInventory().getItemInMainHand().getType() == Material.FIREWORK_ROCKET ||
                                       player.getInventory().getItemInOffHand().getType() == Material.FIREWORK_ROCKET;
 
+            // Elinde roket/fişek yokken havada süzülerek yukarı/ileri anormal hızla gidiyorsa ElytraTargetC logu düşer
             if (distance > 1.8 && to.getY() >= from.getY() && !hasFireworkInHand) {
                 event.setTo(from);
                 flagPlayer(player, "ElytraTargetC");
@@ -533,14 +549,17 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
             }
         }
 
-        if (distance > 1.15 && !player.isFlying() && !player.isGliding() && player.getVelocity().getY() >= -0.3 && from.getY() == to.getY()) {
-            event.setTo(from);
-            flagPlayer(player, "Speed");
-        }
+        // Normal elytra ile uçan oyunculara Speed veya Flight hatası verilmez, ayrı tutulmuştur
+        if (!player.isGliding()) {
+            if (distance > 1.15 && !player.isFlying() && player.getVelocity().getY() >= -0.3 && from.getY() == to.getY()) {
+                event.setTo(from);
+                flagPlayer(player, "Speed");
+            }
 
-        if (to.getY() - from.getY() > 1.35 && !player.isFlying() && !player.isGliding() && !player.getLocation().getBlock().getType().isSolid()) {
-            event.setTo(from);
-            flagPlayer(player, "Flight / Elytra Move");
+            if (to.getY() - from.getY() > 1.35 && !player.isFlying() && !player.getLocation().getBlock().getType().isSolid()) {
+                event.setTo(from);
+                flagPlayer(player, "Flight");
+            }
         }
     }
 
@@ -992,7 +1011,7 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
             } else if (args.length == 2) {
                 return Arrays.asList("1g", "3g", "7g", "12h", "1h", "1d", "30s");
             } else if (args.length == 3) {
-                return Arrays.asList("Attack_Aura", "Flight_Elytra", "Speed", "ElytraTargetC", "Hile_Kullanımı", "Küfür/Hakaret", "Aşırı_Spam");
+                return Arrays.asList("Attack_Aura", "Flight", "Speed", "ElytraTargetC", "Hile_Kullanımı", "Küfür/Hakaret", "Aşırı_Spam");
             }
         } else if (cmd.equals("muteaç")) {
             if (args.length == 1) {
