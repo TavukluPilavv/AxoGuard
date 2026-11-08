@@ -153,6 +153,7 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
             kickCountMap.put(uuid, kicks);
             violations.put(uuid, 0);
 
+            // İstek üzerine: 2 kick yedikten sonra 3.de tam ban atılır
             if (kicks >= 3) {
                 triggerBanSequence(player, hackType);
             } else {
@@ -198,7 +199,7 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
                 if (lama.isValid()) lama.remove();
             }
             if (player.isOnline()) {
-                executeBan(player.getName(), "Console", "14g", "Hile Kullanımı (3 Kick Sonrası Ban)");
+                executeBan(player.getName(), "Console", "14g", "Hile Kullanımı (3. Kick Sonrası Ban)");
             }
         }, 60L);
     }
@@ -293,6 +294,7 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
         UUID uuid = player.getUniqueId();
         String ip = player.getAddress() != null ? player.getAddress().getAddress().getHostAddress() : "";
 
+        // Oyuncu oyuna girer girmez (arka planda oyuna dahil olmadan) direkt ban ekranı fırlatılır
         if (bannedIps.contains(ip)) {
             long expireTime = ipBannedUntil.getOrDefault(ip, 0L);
             if (System.currentTimeMillis() < expireTime) {
@@ -337,6 +339,10 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
             }
         }
 
+        // İstek üzerine: Oyuncu oyundan çıkıp tekrar girince logları sıfırlanır
+        violations.remove(uuid);
+        kickCountMap.remove(uuid);
+
         event.setJoinMessage(ChatColor.GREEN + "+ " + player.getName());
 
         player.setWalkSpeed(0.2f);
@@ -354,7 +360,7 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
         if (playerBotMap.containsValue(entity.getUniqueId()) || playerAirBotMap.containsValue(entity.getUniqueId())) {
             if (entity instanceof LivingEntity) {
                 LivingEntity bot = (LivingEntity) entity;
-                bot.setHealth(bot.getMaxHealth());
+                bot.setHealth(bot.getMaxHealth()); // Botun canı sürekli 20'de kalır, asla ölmez
             }
         }
     }
@@ -509,14 +515,11 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
                 double dot = lookDir.dot(toVictim);
 
                 if (attacker.getGameMode() != GameMode.CREATIVE) {
-                    // HASSAS VE KESİN ATTACK AURA & 360 / KALKAN KIRMA KONTROLÜ:
-                    // Oyuncu 360 dönüp crit atarak veya kalkanı anında kırarak çok hızlı vurduğunda veya
-                    // Görüş açısının dışında / aşırı mesafeden vurduğunda gecikmesiz ve kesinlikle log düşer.
                     boolean isInvalidDistance = distance > 3.8;
-                    boolean isBadAngle = dot < 0.1; // Görüş açısının dışı veya arkası
-                    boolean isFastOrCritAura = distance > 3.0 && (dot < 0.4 || attacker.getFallDistance() > 0.0);
+                    boolean isBadAngle = dot < -0.05; 
+                    boolean isAuraBehavior = distance > 3.0 && (dot < 0.35 || attacker.getFallDistance() > 0.0);
 
-                    if (isInvalidDistance || isBadAngle || isFastOrCritAura) {
+                    if (isInvalidDistance || isBadAngle || isAuraBehavior) {
                         event.setDamage(Math.min(event.getDamage(), 2.0)); 
                         flagPlayer(attacker, "Attack Aura");
                     }
@@ -534,29 +537,27 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
         Location to = event.getTo();
         double distance = from.distance(to);
 
-        // Elytra ve Fişeksiz Hızlanma / Havada Zikzak Hedefleme Kontrolü (ElytraTargetC)
         if (player.isGliding()) {
             boolean hasFireworkInHand = player.getInventory().getItemInMainHand().getType() == Material.FIREWORK_ROCKET ||
                                       player.getInventory().getItemInOffHand().getType() == Material.FIREWORK_ROCKET;
-            
-            // Envanterinde fişek olsa bile elinde aktif roket yokken veya havada hızlıca bir o yana bir bu yana geçip vururken tetiklenir
-            boolean hasFireworkInInventory = player.getInventory().contains(Material.FIREWORK_ROCKET);
+            boolean hasFireworkInInv = player.getInventory().contains(Material.FIREWORK_ROCKET);
 
-            if (distance > 1.6 && to.getY() >= from.getY() && (!hasFireworkInHand || (hasFireworkInInventory && distance > 2.2))) {
+            if (distance > 1.8 && to.getY() >= from.getY() && (!hasFireworkInHand || (hasFireworkInInv && distance > 2.4))) {
                 event.setTo(from);
                 flagPlayer(player, "ElytraTargetC");
                 return;
             }
         }
 
-        // Normal elytra uçuşlarında ASLA Speed hatası VERİLMEZ
-        if (!player.isGliding()) {
-            if (distance > 1.15 && !player.isFlying() && player.getVelocity().getY() >= -0.3 && from.getY() == to.getY()) {
+        if (!player.isGliding() && !player.isFlying()) {
+            boolean isNearGround = player.getLocation().subtract(0, 1, 0).getBlock().getType().isSolid();
+
+            if (distance > 1.15 && !isNearGround && player.getVelocity().getY() >= -0.3 && from.getY() == to.getY()) {
                 event.setTo(from);
                 flagPlayer(player, "Speed");
             }
 
-            if (to.getY() - from.getY() > 1.35 && !player.isFlying() && !player.getLocation().getBlock().getType().isSolid()) {
+            if (to.getY() - from.getY() > 1.35 && !isNearGround && !player.getLocation().getBlock().getType().isSolid()) {
                 event.setTo(from);
                 flagPlayer(player, "Flight");
             }
@@ -675,26 +676,18 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
             UUID uuid = player.getUniqueId();
             if (args.length > 0 && args[0].equalsIgnoreCase("spawn")) {
                 if (playerBotMap.containsKey(uuid)) {
-                    player.sendMessage(ChatColor.RED + "Zaten aktif bir AxoBot'un var! Önce /bot kapa yazmalısın.");
+                    player.sendMessage(ChatColor.RED + "Zaten aktif bir AxoAC AFK Bot'un var! Önce /bot kapa yazmalısın.");
                     return true;
                 }
-                Zombie bot = player.getWorld().spawn(player.getLocation(), Zombie.class);
-                bot.setCustomName(ChatColor.YELLOW + "[WonAc] AFK_Bot");
+                // İstek üzerine: Zombi yerine gerçek Steve NPC formunda afk botu
+                Player bot = player.getWorld().spawn(player.getLocation(), Player.class);
+                bot.setCustomName(ChatColor.YELLOW + "axoac afk bot");
                 bot.setCustomNameVisible(true);
-                bot.setBaby(false);
+                bot.setInvulnerable(true);
                 bot.setAI(false);
-                bot.setInvulnerable(false);
-                bot.setMaxHealth(20.0);
-                bot.setHealth(20.0);
-
-                ItemStack head = new ItemStack(Material.PLAYER_HEAD);
-                SkullMeta meta = (SkullMeta) head.getItemMeta();
-                meta.setOwningPlayer(player);
-                head.setItemMeta(meta);
-                bot.getEquipment().setHelmet(head);
 
                 playerBotMap.put(uuid, bot.getUniqueId());
-                player.sendMessage(ChatColor.GREEN + "Gerçek Steve NPC formunda, sınırsız canı olan ve vurulabilen AxoBot çağrıldı!");
+                player.sendMessage(ChatColor.GREEN + "Sunucuyu açık tutan, sınırsız canı olan ve vurulabilen 'axoac afk bot' çağrıldı!");
                 return true;
             } else if (args.length > 0 && args[0].equalsIgnoreCase("kapa")) {
                 UUID botUuid = playerBotMap.remove(uuid);
@@ -705,9 +698,9 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
                             break;
                         }
                     }
-                    player.sendMessage(ChatColor.GREEN + "AxoBot kapatıldı.");
+                    player.sendMessage(ChatColor.GREEN + "axoac afk bot kapatıldı.");
                 } else {
-                    player.sendMessage(ChatColor.RED + "Aktif bir botun bulunmuyor!");
+                    player.sendMessage(ChatColor.RED + "Aktif bir afk botun bulunmuyor!");
                 }
                 return true;
             }
@@ -724,35 +717,26 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
                             break;
                         }
                     }
-                    player.sendMessage(ChatColor.GREEN + "Havadaki AxoBot kapatıldı.");
+                    player.sendMessage(ChatColor.GREEN + "Havadaki axoac afk bot kapatıldı.");
                 } else {
-                    player.sendMessage(ChatColor.RED + "Aktif bir hava botun bulunmuyor!");
+                    player.sendMessage(ChatColor.RED + "Aktif bir hava afk botun bulunmuyor!");
                 }
                 return true;
             } else {
                 if (playerAirBotMap.containsKey(uuid)) {
-                    player.sendMessage(ChatColor.RED + "Zaten havada aktif bir botun var!");
+                    player.sendMessage(ChatColor.RED + "Zaten havada aktif bir afk botun var!");
                     return true;
                 }
                 Location airLoc = player.getLocation().add(0, 20, 0);
-                Zombie airBot = player.getWorld().spawn(airLoc, Zombie.class);
-                airBot.setCustomName(ChatColor.LIGHT_PURPLE + "[WonAc] AFK_Bot");
+                Player airBot = player.getWorld().spawn(airLoc, Player.class);
+                airBot.setCustomName(ChatColor.LIGHT_PURPLE + "axoac afk bot");
                 airBot.setCustomNameVisible(true);
-                airBot.setBaby(false);
-                airBot.setAI(false);
                 airBot.setGravity(false);
-                airBot.setInvulnerable(false);
-                airBot.setMaxHealth(20.0);
-                airBot.setHealth(20.0);
-
-                ItemStack head = new ItemStack(Material.PLAYER_HEAD);
-                SkullMeta meta = (SkullMeta) head.getItemMeta();
-                meta.setOwningPlayer(player);
-                head.setItemMeta(meta);
-                airBot.getEquipment().setHelmet(head);
+                airBot.setInvulnerable(true);
+                airBot.setAI(false);
 
                 playerAirBotMap.put(uuid, airBot.getUniqueId());
-                player.sendMessage(ChatColor.GREEN + "20 blok yukarıda sınırsız canı olan ve vurulabilen Hava Botu NPC oluşturuldu!");
+                player.sendMessage(ChatColor.GREEN + "20 blok yukarıda sınırsız canı olan havadaki 'axoac afk bot' oluşturuldu!");
                 return true;
             }
         }
@@ -920,7 +904,7 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
                 SkullMeta meta = (SkullMeta) skull.getItemMeta();
                 meta.setOwningPlayer(t);
                 meta.setDisplayName(ChatColor.YELLOW + t.getName());
-                meta.setLore(Arrays.asList(ChatColor.AQUA + "AxoBot ile Yanına Işınlan ve İzle"));
+                meta.setLore(Arrays.asList(ChatColor.AQUA + "AxoBot ile Yanına Işınlan yahu İzle"));
                 skull.setItemMeta(meta);
                 gui.setItem(slot++, skull);
             }
