@@ -509,10 +509,14 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
                 double dot = lookDir.dot(toVictim);
 
                 if (attacker.getGameMode() != GameMode.CREATIVE) {
+                    // HASSAS VE KESİN ATTACK AURA & 360 / KALKAN KIRMA KONTROLÜ:
+                    // Oyuncu 360 dönüp crit atarak veya kalkanı anında kırarak çok hızlı vurduğunda veya
+                    // Görüş açısının dışında / aşırı mesafeden vurduğunda gecikmesiz ve kesinlikle log düşer.
                     boolean isInvalidDistance = distance > 3.8;
-                    boolean isBadAngle = dot < 0.15;
+                    boolean isBadAngle = dot < 0.1; // Görüş açısının dışı veya arkası
+                    boolean isFastOrCritAura = distance > 3.0 && (dot < 0.4 || attacker.getFallDistance() > 0.0);
 
-                    if (isInvalidDistance || isBadAngle) {
+                    if (isInvalidDistance || isBadAngle || isFastOrCritAura) {
                         event.setDamage(Math.min(event.getDamage(), 2.0)); 
                         flagPlayer(attacker, "Attack Aura");
                     }
@@ -530,17 +534,22 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
         Location to = event.getTo();
         double distance = from.distance(to);
 
+        // Elytra ve Fişeksiz Hızlanma / Havada Zikzak Hedefleme Kontrolü (ElytraTargetC)
         if (player.isGliding()) {
             boolean hasFireworkInHand = player.getInventory().getItemInMainHand().getType() == Material.FIREWORK_ROCKET ||
                                       player.getInventory().getItemInOffHand().getType() == Material.FIREWORK_ROCKET;
+            
+            // Envanterinde fişek olsa bile elinde aktif roket yokken veya havada hızlıca bir o yana bir bu yana geçip vururken tetiklenir
+            boolean hasFireworkInInventory = player.getInventory().contains(Material.FIREWORK_ROCKET);
 
-            if (distance > 1.8 && to.getY() >= from.getY() && !hasFireworkInHand) {
+            if (distance > 1.6 && to.getY() >= from.getY() && (!hasFireworkInHand || (hasFireworkInInventory && distance > 2.2))) {
                 event.setTo(from);
                 flagPlayer(player, "ElytraTargetC");
                 return;
             }
         }
 
+        // Normal elytra uçuşlarında ASLA Speed hatası VERİLMEZ
         if (!player.isGliding()) {
             if (distance > 1.15 && !player.isFlying() && player.getVelocity().getY() >= -0.3 && from.getY() == to.getY()) {
                 event.setTo(from);
