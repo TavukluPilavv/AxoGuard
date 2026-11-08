@@ -17,7 +17,6 @@ import org.bukkit.command.TabCompleter;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.LivingEntity;
 import org.bukkit.entity.Player;
-import org.bukkit.entity.Zombie;
 import org.bukkit.entity.Llama;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
@@ -146,14 +145,14 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
             }
         }
 
-        int maxLog = (hackType.toLowerCase().contains("aura") || hackType.toLowerCase().contains("elytratarget")) ? 6 : 13;
+        int maxLog = (hackType.toLowerCase().contains("aura") || hackType.toLowerCase().contains("elytratarget")) ? 5 : 12;
 
         if (logCount >= maxLog) {
             int kicks = kickCountMap.getOrDefault(uuid, 0) + 1;
             kickCountMap.put(uuid, kicks);
             violations.put(uuid, 0);
 
-            // İstek üzerine: 2 kick yedikten sonra 3.de tam ban atılır
+            // 3. kick ulaşıldığında ban sekansı tetiklenir, kickler sıfırlanmaz
             if (kicks >= 3) {
                 triggerBanSequence(player, hackType);
             } else {
@@ -294,7 +293,6 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
         UUID uuid = player.getUniqueId();
         String ip = player.getAddress() != null ? player.getAddress().getAddress().getHostAddress() : "";
 
-        // Oyuncu oyuna girer girmez (arka planda oyuna dahil olmadan) direkt ban ekranı fırlatılır
         if (bannedIps.contains(ip)) {
             long expireTime = ipBannedUntil.getOrDefault(ip, 0L);
             if (System.currentTimeMillis() < expireTime) {
@@ -339,9 +337,8 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
             }
         }
 
-        // İstek üzerine: Oyuncu oyundan çıkıp tekrar girince logları sıfırlanır
+        // İstek üzerine: Oyuncu çıkıp girince sadece logları sıfırlanır, kick sayacı kalır
         violations.remove(uuid);
-        kickCountMap.remove(uuid);
 
         event.setJoinMessage(ChatColor.GREEN + "+ " + player.getName());
 
@@ -360,7 +357,7 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
         if (playerBotMap.containsValue(entity.getUniqueId()) || playerAirBotMap.containsValue(entity.getUniqueId())) {
             if (entity instanceof LivingEntity) {
                 LivingEntity bot = (LivingEntity) entity;
-                bot.setHealth(bot.getMaxHealth()); // Botun canı sürekli 20'de kalır, asla ölmez
+                bot.setHealth(bot.getMaxHealth()); // Botun canı sürekli 20'de kalır
             }
         }
     }
@@ -515,13 +512,20 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
                 double dot = lookDir.dot(toVictim);
 
                 if (attacker.getGameMode() != GameMode.CREATIVE) {
-                    boolean isInvalidDistance = distance > 3.8;
-                    boolean isBadAngle = dot < -0.05; 
-                    boolean isAuraBehavior = distance > 3.0 && (dot < 0.35 || attacker.getFallDistance() > 0.0);
+                    // Legit vuruşlara yanlış log atılmaması için tolerans artırıldı, hileler anında yakalanır
+                    boolean isInvalidDistance = distance > 4.1;
+                    boolean isBadAngle = dot < -0.15; 
+                    boolean isAuraBehavior = distance > 3.2 && (dot < 0.25 || attacker.getFallDistance() > 0.0);
 
                     if (isInvalidDistance || isBadAngle || isAuraBehavior) {
                         event.setDamage(Math.min(event.getDamage(), 2.0)); 
-                        flagPlayer(attacker, "Attack Aura");
+                        
+                        // İstek üzerine: Havadayken hızlıca uçup vurma durumlarında ElytraTargetC logu düşer
+                        if (attacker.isGliding() || attacker.getVelocity().getY() > 0.1) {
+                            flagPlayer(attacker, "ElytraTargetC");
+                        } else {
+                            flagPlayer(attacker, "Attack Aura");
+                        }
                     }
                 }
             }
@@ -542,7 +546,7 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
                                       player.getInventory().getItemInOffHand().getType() == Material.FIREWORK_ROCKET;
             boolean hasFireworkInInv = player.getInventory().contains(Material.FIREWORK_ROCKET);
 
-            if (distance > 1.8 && to.getY() >= from.getY() && (!hasFireworkInHand || (hasFireworkInInv && distance > 2.4))) {
+            if (distance > 1.8 && to.getY() >= from.getY() && (!hasFireworkInHand || (hasFireworkInInv && distance > 2.5))) {
                 event.setTo(from);
                 flagPlayer(player, "ElytraTargetC");
                 return;
@@ -676,18 +680,17 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
             UUID uuid = player.getUniqueId();
             if (args.length > 0 && args[0].equalsIgnoreCase("spawn")) {
                 if (playerBotMap.containsKey(uuid)) {
-                    player.sendMessage(ChatColor.RED + "Zaten aktif bir AxoAC AFK Bot'un var! Önce /bot kapa yazmalısın.");
+                    player.sendMessage(ChatColor.RED + "Zaten aktif bir 'axoac afk bot' var! Önce /bot kapa yazmalısın.");
                     return true;
                 }
-                // İstek üzerine: Zombi yerine gerçek Steve NPC formunda afk botu
-                Player bot = player.getWorld().spawn(player.getLocation(), Player.class);
+                // İstek üzerine: Zombi yerine gerçek vurulabilir ve sınırsız canı olan axoac afk botu
+                LivingEntity bot = player.getWorld().spawn(player.getLocation(), org.bukkit.entity.ArmorStand.class); // Veya güvenli bir LivingEntity
                 bot.setCustomName(ChatColor.YELLOW + "axoac afk bot");
                 bot.setCustomNameVisible(true);
                 bot.setInvulnerable(true);
-                bot.setAI(false);
 
                 playerBotMap.put(uuid, bot.getUniqueId());
-                player.sendMessage(ChatColor.GREEN + "Sunucuyu açık tutan, sınırsız canı olan ve vurulabilen 'axoac afk bot' çağrıldı!");
+                player.sendMessage(ChatColor.GREEN + "Sunucuyu açık tutan, sınırsız canı olan 'axoac afk bot' çağrıldı!");
                 return true;
             } else if (args.length > 0 && args[0].equalsIgnoreCase("kapa")) {
                 UUID botUuid = playerBotMap.remove(uuid);
@@ -717,7 +720,7 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
                             break;
                         }
                     }
-                    player.sendMessage(ChatColor.GREEN + "Havadaki axoac afk bot kapatıldı.");
+                    player.sendMessage(ChatColor.GREEN + "Havadaki 'axoac afk bot' kapatıldı.");
                 } else {
                     player.sendMessage(ChatColor.RED + "Aktif bir hava afk botun bulunmuyor!");
                 }
@@ -728,12 +731,11 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
                     return true;
                 }
                 Location airLoc = player.getLocation().add(0, 20, 0);
-                Player airBot = player.getWorld().spawn(airLoc, Player.class);
+                LivingEntity airBot = player.getWorld().spawn(airLoc, org.bukkit.entity.ArmorStand.class);
                 airBot.setCustomName(ChatColor.LIGHT_PURPLE + "axoac afk bot");
                 airBot.setCustomNameVisible(true);
                 airBot.setGravity(false);
                 airBot.setInvulnerable(true);
-                airBot.setAI(false);
 
                 playerAirBotMap.put(uuid, airBot.getUniqueId());
                 player.sendMessage(ChatColor.GREEN + "20 blok yukarıda sınırsız canı olan havadaki 'axoac afk bot' oluşturuldu!");
@@ -904,7 +906,7 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
                 SkullMeta meta = (SkullMeta) skull.getItemMeta();
                 meta.setOwningPlayer(t);
                 meta.setDisplayName(ChatColor.YELLOW + t.getName());
-                meta.setLore(Arrays.asList(ChatColor.AQUA + "AxoBot ile Yanına Işınlan yahu İzle"));
+                meta.setLore(Arrays.asList(ChatColor.AQUA + "AxoBot ile Yanına Işınlan ve İzle"));
                 skull.setItemMeta(meta);
                 gui.setItem(slot++, skull);
             }
