@@ -1,5 +1,6 @@
 package com.axoguard.anticheat;
 
+import net.md_5.bungee.api.ChatMessageType;
 import net.md_5.bungee.api.chat.ClickEvent;
 import net.md_5.bungee.api.chat.ComponentBuilder;
 import net.md_5.bungee.api.chat.HoverEvent;
@@ -56,6 +57,8 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
     private final Set<String> bannedIps = new HashSet<>();
     private final Map<String, Long> ipBannedUntil = new HashMap<>();
     private final Map<String, String> ipBanReasons = new HashMap<>();
+    private final Map<String, String> ipToPlayerName = new HashMap<>();
+    private final Map<UUID, String> playerToIp = new HashMap<>();
 
     private final Set<String> reportSet = new HashSet<>();
     private final Set<UUID> activeBotSession = new HashSet<>();
@@ -152,7 +155,6 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
             kickCountMap.put(uuid, kicks);
             violations.put(uuid, 0);
 
-            // 3. kick ulaşıldığında ban sekansı tetiklenir, kickler sıfırlanmaz
             if (kicks >= 3) {
                 triggerBanSequence(player, hackType);
             } else {
@@ -277,14 +279,49 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
         Player target = Bukkit.getPlayer(targetName);
         String ip = target != null && target.getAddress() != null ? target.getAddress().getAddress().getHostAddress() : null;
 
+        if (ip == null) {
+            UUID uuid = Bukkit.getOfflinePlayer(targetName).getUniqueId();
+            ip = playerToIp.get(uuid);
+        }
+
         if (ip != null) {
             long durationMs = parseDuration(durationStr);
             bannedIps.add(ip);
             ipBannedUntil.put(ip, System.currentTimeMillis() + durationMs);
             ipBanReasons.put(ip, reason);
+            ipToPlayerName.put(ip, targetName);
         }
 
-        executeBan(targetName, executor, durationStr, reason);
+        Player onlineTarget = Bukkit.getPlayer(targetName);
+        UUID uuid = onlineTarget != null ? onlineTarget.getUniqueId() : Bukkit.getOfflinePlayer(targetName).getUniqueId();
+        long durationMs = parseDuration(durationStr);
+        bannedPlayers.put(uuid, System.currentTimeMillis() + durationMs);
+        banReasons.put(uuid, reason);
+
+        String dateStr = new SimpleDateFormat("yyyy/MM/dd").format(new Date());
+        String detailedDuration = formatDurationDetailed(durationStr);
+
+        String banScreen = ChatColor.GOLD + "Bağlantı koptu\n\n" +
+                ChatColor.GOLD + "" + ChatColor.BOLD + "BU SUNUCUDAN YASAKLANDINIZ (IP BAN)\n\n" +
+                ChatColor.WHITE + "⏰ TARİH: " + ChatColor.YELLOW + dateStr + "\n" +
+                ChatColor.WHITE + "🔨 YASAKLAYAN: " + ChatColor.AQUA + executor + "\n" +
+                ChatColor.WHITE + "🏷 SEBEP: " + ChatColor.LIGHT_PURPLE + reason + "\n" +
+                ChatColor.WHITE + "⌛ SÜRE: " + ChatColor.LIGHT_PURPLE + detailedDuration + "\n\n" +
+                ChatColor.AQUA + "İTİRAZ EDEBİLİRSİNİZ:\n" +
+                ChatColor.WHITE + "discord.gg/axocraft";
+
+        if (onlineTarget != null && onlineTarget.isOnline()) {
+            onlineTarget.kickPlayer(banScreen);
+        }
+
+        // İstek üzerine: Bildirimde normal ban değil IP BAN bildirimi geçer
+        Bukkit.broadcastMessage(ChatColor.DARK_RED + "---------------------------------------------");
+        Bukkit.broadcastMessage(ChatColor.RED + "" + ChatColor.BOLD + "AXOCRAFT - SÜRELİ IP BAN BİLDİRİMİ");
+        Bukkit.broadcastMessage(ChatColor.GRAY + "🔨 YASAKLAYAN " + ChatColor.AQUA + executor);
+        Bukkit.broadcastMessage(ChatColor.GRAY + "🗡 YASAKLANAN IP OYUNCU " + ChatColor.RED + targetName);
+        Bukkit.broadcastMessage(ChatColor.GRAY + "🏷 SEBEP " + ChatColor.LIGHT_PURPLE + reason);
+        Bukkit.broadcastMessage(ChatColor.GRAY + "⌛ SÜRE " + ChatColor.GREEN + detailedDuration);
+        Bukkit.broadcastMessage(ChatColor.DARK_RED + "---------------------------------------------");
     }
 
     @EventHandler
@@ -293,13 +330,16 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
         UUID uuid = player.getUniqueId();
         String ip = player.getAddress() != null ? player.getAddress().getAddress().getHostAddress() : "";
 
+        playerToIp.put(uuid, ip);
+
+        // İstek üzerine: Sunucuya girmeye çalışınca dünya yüklenme aşamasında direkt ban ekranı çıkar (çıkma/giriş simgesi olmaz)
         if (bannedIps.contains(ip)) {
             long expireTime = ipBannedUntil.getOrDefault(ip, 0L);
             if (System.currentTimeMillis() < expireTime) {
                 String reason = ipBanReasons.getOrDefault(ip, "IP Ban");
                 String dateStr = new SimpleDateFormat("yyyy/MM/dd").format(new Date());
                 String banScreen = ChatColor.GOLD + "Bağlantı koptu\n\n" +
-                        ChatColor.GOLD + "" + ChatColor.BOLD + "BU SUNUCUDAN YASAKLANDINIZ\n\n" +
+                        ChatColor.GOLD + "" + ChatColor.BOLD + "BU SUNUCUDAN YASAKLANDINIZ (IP BAN)\n\n" +
                         ChatColor.WHITE + "⏰ TARİH: " + ChatColor.YELLOW + dateStr + "\n" +
                         ChatColor.WHITE + "🔨 YASAKLAYAN: " + ChatColor.AQUA + "Console\n" +
                         ChatColor.WHITE + "🏷 SEBEP: " + ChatColor.LIGHT_PURPLE + reason + "\n\n" +
@@ -337,10 +377,12 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
             }
         }
 
-        // İstek üzerine: Oyuncu çıkıp girince sadece logları sıfırlanır, kick sayacı kalır
         violations.remove(uuid);
 
-        event.setJoinMessage(ChatColor.GREEN + "+ " + player.getName());
+        event.setJoinMessage(null);
+        for (Player p : Bukkit.getOnlinePlayers()) {
+            p.spigot().sendMessage(ChatMessageType.ACTION_BAR, new TextComponent(ChatColor.GREEN + "+ [" + player.getName() + "]"));
+        }
 
         player.setWalkSpeed(0.2f);
         player.setFlySpeed(0.1f);
@@ -348,7 +390,11 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
 
     @EventHandler
     public void onQuit(PlayerQuitEvent event) {
-        event.setQuitMessage(ChatColor.RED + "- " + event.getPlayer().getName());
+        event.setQuitMessage(null);
+        Player player = event.getPlayer();
+        for (Player p : Bukkit.getOnlinePlayers()) {
+            p.spigot().sendMessage(ChatMessageType.ACTION_BAR, new TextComponent(ChatColor.RED + "- [" + player.getName() + "]"));
+        }
     }
 
     @EventHandler
@@ -357,7 +403,7 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
         if (playerBotMap.containsValue(entity.getUniqueId()) || playerAirBotMap.containsValue(entity.getUniqueId())) {
             if (entity instanceof LivingEntity) {
                 LivingEntity bot = (LivingEntity) entity;
-                bot.setHealth(bot.getMaxHealth()); // Botun canı sürekli 20'de kalır
+                bot.setHealth(bot.getMaxHealth());
             }
         }
     }
@@ -512,15 +558,13 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
                 double dot = lookDir.dot(toVictim);
 
                 if (attacker.getGameMode() != GameMode.CREATIVE) {
-                    // Legit vuruşlara yanlış log atılmaması için tolerans artırıldı, hileler anında yakalanır
-                    boolean isInvalidDistance = distance > 4.1;
-                    boolean isBadAngle = dot < -0.15; 
-                    boolean isAuraBehavior = distance > 3.2 && (dot < 0.25 || attacker.getFallDistance() > 0.0);
+                    // Legit vuruşlara asla hata verilmez, sadece bariz hileler yakalanır
+                    boolean isInvalidDistance = distance > 4.2;
+                    boolean isBackHitAura = distance > 3.4 && dot < -0.3;
 
-                    if (isInvalidDistance || isBadAngle || isAuraBehavior) {
+                    if (isInvalidDistance || isBackHitAura) {
                         event.setDamage(Math.min(event.getDamage(), 2.0)); 
                         
-                        // İstek üzerine: Havadayken hızlıca uçup vurma durumlarında ElytraTargetC logu düşer
                         if (attacker.isGliding() || attacker.getVelocity().getY() > 0.1) {
                             flagPlayer(attacker, "ElytraTargetC");
                         } else {
@@ -683,8 +727,7 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
                     player.sendMessage(ChatColor.RED + "Zaten aktif bir 'axoac afk bot' var! Önce /bot kapa yazmalısın.");
                     return true;
                 }
-                // İstek üzerine: Zombi yerine gerçek vurulabilir ve sınırsız canı olan axoac afk botu
-                LivingEntity bot = player.getWorld().spawn(player.getLocation(), org.bukkit.entity.ArmorStand.class); // Veya güvenli bir LivingEntity
+                LivingEntity bot = player.getWorld().spawn(player.getLocation(), org.bukkit.entity.ArmorStand.class);
                 bot.setCustomName(ChatColor.YELLOW + "axoac afk bot");
                 bot.setCustomNameVisible(true);
                 bot.setInvulnerable(true);
@@ -767,11 +810,6 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
                 player.sendMessage(ChatColor.RED + "Kullanım: /banla-ip <oyuncu> <süre> <sebep>");
                 return true;
             }
-            Player targetCheck = Bukkit.getPlayer(args[0]);
-            if (targetCheck == null) {
-                player.sendMessage(ChatColor.RED + "Bu oyuncu çevrimiçi değil veya bulunamadı!");
-                return true;
-            }
             executeIpBan(args[0], player.getName(), args[1], args[2]);
             return true;
         }
@@ -803,20 +841,34 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
             return true;
         }
 
+        // İstek üzerine: /banaç-ip komutunda [IP] gösterimi ve IP ban kaldırma
         if (cmd.equals("banaç-ip")) {
             if (args.length < 1) {
-                player.sendMessage(ChatColor.RED + "Kullanım: /banaç-ip <ip>");
+                player.sendMessage(ChatColor.RED + "Kullanım: /banaç-ip <oyuncu_adı_veya_ip>");
                 return true;
             }
-            String ip = args[0];
-            if (!bannedIps.contains(ip)) {
-                player.sendMessage(ChatColor.RED + "Bu IP adresine ait aktif bir ban bulunmuyor!");
+            String query = args[0];
+            String targetIp = null;
+
+            for (Map.Entry<String, String> entry : ipToPlayerName.entrySet()) {
+                if (entry.getValue().equalsIgnoreCase(query)) {
+                    targetIp = entry.getKey();
+                    break;
+                }
+            }
+            if (targetIp == null) targetIp = query;
+
+            if (!bannedIps.contains(targetIp)) {
+                player.sendMessage(ChatColor.RED + "Bu IP adresine ait aktif bir IP ban bulunmuyor!");
                 return true;
             }
-            bannedIps.remove(ip);
-            ipBannedUntil.remove(ip);
-            ipBanReasons.remove(ip);
-            player.sendMessage(ChatColor.GREEN + ip + " IP adresinin banı başarıyla kaldırıldı.");
+
+            bannedIps.remove(targetIp);
+            ipBannedUntil.remove(targetIp);
+            ipBanReasons.remove(targetIp);
+            ipToPlayerName.remove(targetIp);
+
+            player.sendMessage(ChatColor.GREEN + "Başarılı! " + query + " adlı oyuncunun IP banı (IP: " + targetIp + ") kaldırıldı, artık sunucuya girebilirler.");
             return true;
         }
 
@@ -999,6 +1051,18 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
             } else if (args.length == 3) {
                 return Arrays.asList("Attack_Aura", "Flight", "Speed", "ElytraTargetC", "Hile_Kullanımı", "Küfür/Hakaret", "Aşırı_Spam");
             }
+        } else if (cmd.equals("banaç-ip")) {
+            if (args.length == 1) {
+                List<String> list = new ArrayList<>();
+                for (Map.Entry<String, String> entry : ipToPlayerName.entrySet()) {
+                    if (bannedIps.contains(entry.getKey())) {
+                        list.add(entry.getValue() + " [" + entry.getKey() + "]");
+                    }
+                }
+                return list.stream()
+                        .filter(name -> name.toLowerCase().startsWith(args[0].toLowerCase()))
+                        .collect(Collectors.toList());
+            }
         } else if (cmd.equals("muteaç")) {
             if (args.length == 1) {
                 List<String> mutedNames = new ArrayList<>();
@@ -1023,18 +1087,12 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
                         .filter(name -> name.toLowerCase().startsWith(args[0].toLowerCase()))
                         .collect(Collectors.toList());
             }
-        } else if (cmd.equals("banaç-ip")) {
-            if (args.length == 1) {
-                return new ArrayList<>(bannedIps).stream()
-                        .filter(ip -> ip.toLowerCase().startsWith(args[0].toLowerCase()))
-                        .collect(Collectors.toList());
-            }
         } else if (cmd.equals("axobot")) {
             if (args.length == 1) return Collections.singletonList("izle");
         } else if (cmd.equals("bot")) {
             if (args.length == 1) return Arrays.asList("spawn", "kapa");
         } else if (cmd.equals("bothava")) {
-            if (args.length == 1) return Collections.singletonList("kapa");
+            if (args.length == 1) return Collections.singletonList("clle" , "kapa");
         }
 
         return Collections.emptyList();
