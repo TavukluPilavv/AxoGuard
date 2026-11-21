@@ -18,7 +18,7 @@ import org.bukkit.command.TabCompleter;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.LivingEntity;
 import org.bukkit.entity.Player;
-import org.bukkit.entity.Skeleton;
+import org.bukkit.entity.Zombie;
 import org.bukkit.entity.Llama;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
@@ -48,12 +48,15 @@ import java.util.stream.Collectors;
 public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCompleter, PluginMessageListener {
 
     private final Map<UUID, Integer> violations = new HashMap<>();
-    private final Map<UUID, Integer> kickCountMap = new HashMap<>();
+    private final Map<String, Integer> hackKickCountMap = new HashMap<>(); // Hile bazlı kick sayacı (Örn: UUID_Attack Aura -> 2)
     private final Map<UUID, Long> hitBlockTime = new HashMap<>();
     private final Map<UUID, Integer> cpsMap = new HashMap<>();
     private final Map<Integer, UUID> botTargets = new HashMap<>();
 
     private final Map<UUID, Long> mutedPlayers = new HashMap<>();
+    private final Map<UUID, Integer> swearCountMap = new HashMap<>(); // Küfür sayacı
+    private final Map<UUID, Long> spamCheckMap = new HashMap<>();
+
     private final Map<UUID, Long> bannedPlayers = new HashMap<>();
     private final Map<UUID, String> banReasons = new HashMap<>();
     
@@ -65,6 +68,7 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
 
     private final Set<String> reportSet = new HashSet<>();
     private final Set<UUID> activeBotSession = new HashSet<>();
+    private final Map<UUID, String> botActionState = new HashMap<>(); // Botun o anki modu (izle, banla, bekle)
     
     private final Map<UUID, List<LogEntry>> playerLogs = new HashMap<>();
     private final Map<UUID, Integer> playerLogOffsets = new HashMap<>();
@@ -76,6 +80,7 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
     private final Map<UUID, Long> diamondResetTimer = new HashMap<>();
 
     private final List<String> forbiddenClients = Arrays.asList("wurst", "meteor", "yfend", "device", "arvion", "freecam");
+    private final List<String> badWords = Arrays.asList("mal", "salak", "aptal", "gerizekalı", "gerzek", "amk", "aq", "orosp", "sik", "anan", "a1tal");
 
     public static class LogEntry {
         public String hackType;
@@ -151,18 +156,20 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
             }
         }
 
-        int maxLog = (hackType.equals("ShieldBreaker") || hackType.equals("AimAssist")) ? 4 : 
-                     (hackType.toLowerCase().contains("aura") || hackType.toLowerCase().contains("elytratarget")) ? 5 : 12;
+        // İstek üzerine limitler: Attack Aura ve ElytraTarget için 4x log limiti
+        int maxLog = (hackType.toLowerCase().contains("aura") || hackType.toLowerCase().contains("elytratarget")) ? 4 : 12;
 
         if (logCount >= maxLog) {
-            int kicks = kickCountMap.getOrDefault(uuid, 0) + 1;
-            kickCountMap.put(uuid, kicks);
+            String kickKey = uuid.toString() + "_" + hackType;
+            int hileKicks = hackKickCountMap.getOrDefault(kickKey, 0) + 1;
+            hackKickCountMap.put(kickKey, hileKicks);
             violations.put(uuid, 0);
 
-            if (kicks >= 3) {
+            // İstek üzerine: Aynı hileden 2 kez kick yeme şartı (2. kickte ban)
+            if (hileKicks >= 2) {
                 triggerBanSequence(player, hackType);
             } else {
-                kickPlayer(player, hackType);
+                kickPlayer(player, hackType, hackType + " (Uyarı: " + hileKicks + "/2 Kick)");
             }
         }
     }
@@ -204,7 +211,7 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
                 if (lama.isValid()) lama.remove();
             }
             if (player.isOnline()) {
-                executeBan(player.getName(), "Console", "14g", "Hile Kullanımı (3. Kick Sonrası Ban)");
+                executeBan(player.getName(), "Console", "14g", "Hile Kullanımı (Aynı hileden 2. Kick)");
             }
         }, 60L);
     }
@@ -218,10 +225,10 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
         }
     }
 
-    private void kickPlayer(Player player, String hackType) {
+    private void kickPlayer(Player player, String hackType, String detail) {
         String kickReason = ChatColor.RED + "AxoAC - Güvenlik Sistemi\n\n" +
                 ChatColor.YELLOW + "Sunucumuzda hile kullanımı tespit edildi!\n" +
-                ChatColor.RED + "Sebep: " + ChatColor.YELLOW + hackType + "\n\n" +
+                ChatColor.RED + "Sebep: " + ChatColor.YELLOW + detail + "\n\n" +
                 ChatColor.AQUA + "discord.gg/axocraft";
 
         player.kickPlayer(kickReason);
@@ -470,6 +477,7 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
     public void onChat(AsyncPlayerChatEvent event) {
         Player player = event.getPlayer();
         UUID uuid = player.getUniqueId();
+        String msg = event.getMessage().toLowerCase();
 
         if (mutedPlayers.containsKey(uuid)) {
             long expireTime = mutedPlayers.get(uuid);
@@ -483,27 +491,70 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
             }
         }
 
+        // İstek üzerine: Küfür ve Spam Filtresi
+        boolean hasBadWord = false;
+        for (String bad : badWords) {
+            if (msg.contains(bad)) {
+                hasBadWord = true;
+                break;
+            }
+        }
+
+        if (hasBadWord) {
+            event.setCancelled(true);
+            int swears = swearCountMap.getOrDefault(uuid, 0) + 1;
+            swearCountMap.put(uuid, swears);
+
+            player.sendMessage(ChatColor.RED + "Mesajınız engellendi! (Küfür/Argo tespit edildi)");
+
+            // 4 kez küfür ederse 1 saat otomatik mute
+            if (swears >= 4) {
+                mutedPlayers.put(uuid, System.currentTimeMillis() + (60 * 60 * 1000L));
+                swearCountMap.put(uuid, 0);
+                player.sendMessage(ChatColor.RED + "Aşırı küfür/argo kullanımından dolayı 1 saat süreyle mute yediniz!");
+            }
+            return;
+        }
+
+        // Spam kontrolü (1.5 saniyeden hızlı mesaj)
+        long lastMsgTime = spamCheckMap.getOrDefault(uuid, 0L);
+        if (System.currentTimeMillis() - lastMsgTime < 1500 && !player.isOp()) {
+            event.setCancelled(true);
+            mutedPlayers.put(uuid, System.currentTimeMillis() + (15 * 60 * 1000L)); // 15 dk mute
+            player.sendMessage(ChatColor.RED + "Çok hızlı mesaj attığınız için (Spam) 15 dakika süreyle mute yediniz!");
+            return;
+        }
+        spamCheckMap.put(uuid, System.currentTimeMillis());
+
+        // İstek üzerine: Bot ile Gizli Sohbet Sistemi (Kimse görmez, sadece sen ve bot)
         if (activeBotSession.contains(uuid) && player.isOp()) {
             event.setCancelled(true);
-            String msg = event.getMessage();
-            player.sendMessage(ChatColor.GOLD + "[Sen] " + ChatColor.WHITE + msg);
+            player.sendMessage(ChatColor.GOLD + "[Gizli Sohbet] [Sen] " + ChatColor.WHITE + event.getMessage());
             
             Bukkit.getScheduler().runTask(this, () -> {
                 String botReply;
-                String lower = msg.toLowerCase().trim();
-                
-                if (lower.equals("sa") || lower.contains("selamün aleyküm") || lower.contains("selamun aleykum") || lower.contains("selam")) {
-                    botReply = "AxoBot: Aleykümselam as napıon?";
-                } else if (lower.contains("nasılsın") || lower.contains("nasıl gidiyor")) {
-                    botReply = "AxoBot: Hamdolsun efendim, AxoCraft sunucusunu korumaya devam ediyorum ya siz?";
-                } else if (lower.contains("hile mi") || lower.contains("vuruyor mu") || lower.contains("sence hilemi")) {
-                    botReply = "AxoBot: Bilmiyorum efendim, izleyelim önce hareketlerini inceleyeyim.";
-                } else if (lower.contains("ne yapıyorsun") || lower.contains("ne yapıyon")) {
-                    botReply = "AxoBot: Şüpheli oyuncuları gözetliyorum efendim.";
+                String lower = event.getMessage().toLowerCase().trim();
+                String currentState = botActionState.getOrDefault(uuid, "normal");
+
+                if (lower.equals("sa") || lower.contains("selamün aleyküm") || lower.contains("selam")) {
+                    botReply = "AxoBot: Aleykümselam efendim, hoş geldiniz.";
+                } else if (lower.contains("merhaba")) {
+                    botReply = "AxoBot: Merhaba efendim, nasılsınız?";
+                } else if (lower.contains("napıyon") || lower.contains("ne yapıyon") || lower.contains("ne yapıyorsun")) {
+                    botReply = "AxoBot: Efendim, şüpheli oyuncuları gözetliyorum ve hile testleri yapıyorum.";
+                } else if (lower.contains("az daha izle") || lower.contains("bekle")) {
+                    botActionState.put(uuid, "izle");
+                    botReply = "AxoBot: Emredersiniz efendim, oyuncuyu az daha izlemeye devam ediyorum.";
+                } else if (lower.contains("banla") || lower.contains("at şunu")) {
+                    botReply = "AxoBot: Efendim deliller tamam, hemen ban atıyorum / kick atıyorum!";
+                    // Simüle edilmiş otomatik ceza
+                    Bukkit.broadcastMessage(ChatColor.DARK_RED + "[AxoBot] Şüpheli oyuncu bot tarafından cezalandırıldı.");
+                } else if (currentState.equals("izle")) {
+                    botReply = "AxoBot: Efendim izliyorum, hareketleri hala şüpheli. Ne buyurursunuz?";
                 } else {
                     botReply = "AxoBot: Emredersiniz efendim, takipteyim!";
                 }
-                player.sendMessage(ChatColor.AQUA + botReply);
+                player.sendMessage(ChatColor.AQUA + "[Gizli Sohbet] " + botReply);
             });
         }
     }
@@ -594,20 +645,6 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
         Location from = event.getFrom();
         Location to = event.getTo();
         double distance = from.distance(to);
-
-        if (Math.abs(to.getYaw() - from.getYaw()) > 65f || Math.abs(to.getPitch() - from.getPitch()) > 45f) {
-            for (Entity entity : player.getNearbyEntities(5, 5, 5)) {
-                if (entity instanceof LivingEntity && !(entity instanceof Llama)) {
-                    Location targetLoc = entity.getLocation();
-                    Vector toTarget = targetLoc.toVector().subtract(player.getLocation().toVector()).normalize();
-                    Vector lookDir = player.getLocation().getDirection().normalize();
-                    if (lookDir.dot(toTarget) > 0.85) {
-                        flagPlayer(player, "AimAssist");
-                        break;
-                    }
-                }
-            }
-        }
 
         if (player.isGliding()) {
             boolean hasFireworkInHand = player.getInventory().getItemInMainHand().getType() == Material.FIREWORK_ROCKET ||
@@ -751,7 +788,8 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
                     player.sendMessage(ChatColor.RED + "Zaten aktif bir 'axoac afk bot' var! Önce /bot kapa yazmalısın.");
                     return true;
                 }
-                Skeleton bot = player.getWorld().spawn(player.getLocation(), Skeleton.class);
+                // İstek üzerine: Zombi formunda, sınırsız canı olan ve regen/heal efektli afk bot
+                Zombie bot = player.getWorld().spawn(player.getLocation(), Zombie.class);
                 bot.setCustomName(ChatColor.YELLOW + "axoac afk bot");
                 bot.setCustomNameVisible(true);
                 bot.setAI(false);
@@ -760,15 +798,15 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
                 bot.addPotionEffect(new PotionEffect(PotionEffectType.HEAL, Integer.MAX_VALUE, 200, false, false));
 
                 playerBotMap.put(uuid, bot.getUniqueId());
-                player.sendMessage(ChatColor.GREEN + "Sunucuyu açık tutan, sınırsız canı olan 'axoac afk bot' çağrıldı!");
+                player.sendMessage(ChatColor.GREEN + "Sunucuyu açık tutan, sınırsız canı olan 'axoac afk bot (Zombi)' çağrıldı!");
                 return true;
             } else if (args.length > 0 && args[0].equalsIgnoreCase("kalkan")) {
                 if (playerBotMap.containsKey(uuid)) {
                     player.sendMessage(ChatColor.RED + "Zaten aktif bir 'axoac afk bot' var! Önce /bot kapa yazmalısın.");
                     return true;
                 }
-                Skeleton bot = player.getWorld().spawn(player.getLocation(), Skeleton.class);
-                bot.setCustomName(ChatColor.GOLD + "axoac afk bot (Kalkanlı)");
+                Zombie bot = player.getWorld().spawn(player.getLocation(), Zombie.class);
+                bot.setCustomName(ChatColor.GOLD + "axoac afk bot (Kalkanlı Zombi)");
                 bot.setCustomNameVisible(true);
                 bot.setAI(false);
                 bot.setInvulnerable(false);
@@ -777,7 +815,7 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
                 bot.addPotionEffect(new PotionEffect(PotionEffectType.HEAL, Integer.MAX_VALUE, 200, false, false));
 
                 playerBotMap.put(uuid, bot.getUniqueId());
-                player.sendMessage(ChatColor.GREEN + "Kalkanlı, sınırsız canı olan 'axoac afk bot' çağrıldı!");
+                player.sendMessage(ChatColor.GREEN + "Kalkanlı Zombi AFK bot çağrıldı!");
                 return true;
             } else if (args.length > 0 && args[0].equalsIgnoreCase("kapa")) {
                 UUID botUuid = playerBotMap.remove(uuid);
@@ -818,8 +856,8 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
                     return true;
                 }
                 Location airLoc = player.getLocation().add(0, 20, 0);
-                Skeleton airBot = player.getWorld().spawn(airLoc, Skeleton.class);
-                airBot.setCustomName(ChatColor.GOLD + "axoac afk bot (Kalkanlı)");
+                Zombie airBot = player.getWorld().spawn(airLoc, Zombie.class);
+                airBot.setCustomName(ChatColor.GOLD + "axoac afk bot (Kalkanlı Zombi)");
                 airBot.setCustomNameVisible(true);
                 airBot.setGravity(false);
                 airBot.setAI(false);
@@ -829,7 +867,7 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
                 airBot.addPotionEffect(new PotionEffect(PotionEffectType.HEAL, Integer.MAX_VALUE, 200, false, false));
 
                 playerAirBotMap.put(uuid, airBot.getUniqueId());
-                player.sendMessage(ChatColor.GREEN + "20 blok yukarıda kalkanlı havadaki 'axoac afk bot' oluşturuldu!");
+                player.sendMessage(ChatColor.GREEN + "20 blok yukarısındaki kalkanlı Zombi AFK bot oluşturuldu!");
                 return true;
             } else {
                 if (playerAirBotMap.containsKey(uuid)) {
@@ -837,7 +875,7 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
                     return true;
                 }
                 Location airLoc = player.getLocation().add(0, 20, 0);
-                Skeleton airBot = player.getWorld().spawn(airLoc, Skeleton.class);
+                Zombie airBot = player.getWorld().spawn(airLoc, Zombie.class);
                 airBot.setCustomName(ChatColor.LIGHT_PURPLE + "axoac afk bot");
                 airBot.setCustomNameVisible(true);
                 airBot.setGravity(false);
@@ -847,7 +885,7 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
                 airBot.addPotionEffect(new PotionEffect(PotionEffectType.HEAL, Integer.MAX_VALUE, 200, false, false));
 
                 playerAirBotMap.put(uuid, airBot.getUniqueId());
-                player.sendMessage(ChatColor.GREEN + "20 blok yukarıda sınırsız canı olan havadaki 'axoac afk bot' oluşturuldu!");
+                player.sendMessage(ChatColor.GREEN + "20 blok yukarıda Zombi AFK bot oluşturuldu!");
                 return true;
             }
         }
@@ -1004,6 +1042,7 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
 
     public void openReportMenu(Player player, String targetName) {
         Inventory gui = Bukkit.createInventory(null, 27, ChatColor.DARK_GRAY + "Şikayet: " + targetName);
+        // İstek üzerine: Rapor menüsünde hileyi andıran Netherite Kılıç simgesi
         ItemStack hile = new ItemStack(Material.NETHERITE_SWORD);
         ItemMeta meta = hile.getItemMeta();
         meta.setDisplayName(ChatColor.RED + "Hile Bildirildi: " + targetName);
@@ -1114,7 +1153,7 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
             } else if (args.length == 2) {
                 return Arrays.asList("1g", "3g", "7g", "12h", "1h", "1d", "30s");
             } else if (args.length == 3) {
-                return Arrays.asList("Attack_Aura", "Flight", "Speed", "ElytraTargetC", "AimAssist", "ShieldBreaker", "Hile_Kullanımı", "Küfür/Hakaret", "Aşırı_Spam");
+                return Arrays.asList("Attack_Aura", "Flight", "Speed", "ElytraTargetC", "ShieldBreaker", "Hile_Kullanımı", "Küfür/Hakaret", "Aşırı_Spam");
             }
         } else if (cmd.equals("banaç-ip")) {
             if (args.length == 1) {
