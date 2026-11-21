@@ -767,19 +767,17 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
                     player.sendMessage(ChatColor.RED + "Zaten aktif bir 'axoac afk bot' var! Önce /bot kapa yazmalısın.");
                     return true;
                 }
-                // İstek üzerine: Kalkanlı, aktif kalkan (blocking) durumunda İskelet AFK botu
                 Skeleton bot = player.getWorld().spawn(player.getLocation(), Skeleton.class);
                 bot.setCustomName(ChatColor.GOLD + "axoac afk bot (Kalkanlı)");
                 bot.setCustomNameVisible(true);
                 bot.setAI(false);
                 bot.setInvulnerable(false);
                 bot.getEquipment().setItemInOffHand(new ItemStack(Material.SHIELD));
-                bot.setHandRaised(true); // Kalkanı aktif tutar
                 bot.addPotionEffect(new PotionEffect(PotionEffectType.REGENERATION, Integer.MAX_VALUE, 200, false, false));
                 bot.addPotionEffect(new PotionEffect(PotionEffectType.HEAL, Integer.MAX_VALUE, 200, false, false));
 
                 playerBotMap.put(uuid, bot.getUniqueId());
-                player.sendMessage(ChatColor.GREEN + "Kalkanı açık tutan, sınırsız canı olan 'axoac afk bot (Kalkanlı)' çağrıldı!");
+                player.sendMessage(ChatColor.GREEN + "Kalkanlı, sınırsız canı olan 'axoac afk bot' çağrıldı!");
                 return true;
             } else if (args.length > 0 && args[0].equalsIgnoreCase("kapa")) {
                 UUID botUuid = playerBotMap.remove(uuid);
@@ -827,12 +825,11 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
                 airBot.setAI(false);
                 airBot.setInvulnerable(false);
                 airBot.getEquipment().setItemInOffHand(new ItemStack(Material.SHIELD));
-                airBot.setHandRaised(true); // Havada kalkanı aktif tutar
                 airBot.addPotionEffect(new PotionEffect(PotionEffectType.REGENERATION, Integer.MAX_VALUE, 200, false, false));
                 airBot.addPotionEffect(new PotionEffect(PotionEffectType.HEAL, Integer.MAX_VALUE, 200, false, false));
 
                 playerAirBotMap.put(uuid, airBot.getUniqueId());
-                player.sendMessage(ChatColor.GREEN + "20 blok yukarıda kalkanı açık duran havadaki 'axoac afk bot' oluşturuldu!");
+                player.sendMessage(ChatColor.GREEN + "20 blok yukarıda kalkanlı havadaki 'axoac afk bot' oluşturuldu!");
                 return true;
             } else {
                 if (playerAirBotMap.containsKey(uuid)) {
