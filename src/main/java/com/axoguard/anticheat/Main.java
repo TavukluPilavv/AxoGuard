@@ -314,7 +314,6 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
             onlineTarget.kickPlayer(banScreen);
         }
 
-        // İstek üzerine: Bildirimde normal ban değil IP BAN bildirimi geçer
         Bukkit.broadcastMessage(ChatColor.DARK_RED + "---------------------------------------------");
         Bukkit.broadcastMessage(ChatColor.RED + "" + ChatColor.BOLD + "AXOCRAFT - SÜRELİ IP BAN BİLDİRİMİ");
         Bukkit.broadcastMessage(ChatColor.GRAY + "🔨 YASAKLAYAN " + ChatColor.AQUA + executor);
@@ -332,7 +331,6 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
 
         playerToIp.put(uuid, ip);
 
-        // İstek üzerine: Sunucuya girmeye çalışınca dünya yüklenme aşamasında direkt ban ekranı çıkar (çıkma/giriş simgesi olmaz)
         if (bannedIps.contains(ip)) {
             long expireTime = ipBannedUntil.getOrDefault(ip, 0L);
             if (System.currentTimeMillis() < expireTime) {
@@ -558,7 +556,6 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
                 double dot = lookDir.dot(toVictim);
 
                 if (attacker.getGameMode() != GameMode.CREATIVE) {
-                    // Legit vuruşlara asla hata verilmez, sadece bariz hileler yakalanır
                     boolean isInvalidDistance = distance > 4.2;
                     boolean isBackHitAura = distance > 3.4 && dot < -0.3;
 
@@ -841,7 +838,6 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
             return true;
         }
 
-        // İstek üzerine: /banaç-ip komutunda [IP] gösterimi ve IP ban kaldırma
         if (cmd.equals("banaç-ip")) {
             if (args.length < 1) {
                 player.sendMessage(ChatColor.RED + "Kullanım: /banaç-ip <oyuncu_adı_veya_ip>");
@@ -967,7 +963,7 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
     }
 
     @EventHandler
-    public void onMenuClick(InventoryClickEvent event) {
+    public void openReportsGUIHandler(InventoryClickEvent event) {
         String title = event.getView().getTitle();
         Player player = (Player) event.getWhoClicked();
 
@@ -1092,7 +1088,8 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
         } else if (cmd.equals("bot")) {
             if (args.length == 1) return Arrays.asList("spawn", "kapa");
         } else if (cmd.equals("bothava")) {
-            if (args.length == 1) return Collections.singletonList("clle" , "kapa");
+            // DÜZELTİLDİ: Hatalı iki elemanlı singletonList yerine Arrays.asList kullanıldı
+            if (args.length == 1) return Arrays.asList("kapa");
         }
 
         return Collections.emptyList();
