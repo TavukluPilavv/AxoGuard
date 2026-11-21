@@ -18,6 +18,7 @@ import org.bukkit.command.TabCompleter;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.LivingEntity;
 import org.bukkit.entity.Player;
+import org.bukkit.entity.Skeleton;
 import org.bukkit.entity.Llama;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
@@ -36,6 +37,8 @@ import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.inventory.meta.SkullMeta;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.plugin.messaging.PluginMessageListener;
+import org.bukkit.potion.PotionEffect;
+import org.bukkit.potion.PotionEffectType;
 import org.bukkit.util.Vector;
 
 import java.text.SimpleDateFormat;
@@ -148,7 +151,9 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
             }
         }
 
-        int maxLog = (hackType.toLowerCase().contains("aura") || hackType.toLowerCase().contains("elytratarget")) ? 5 : 12;
+        // İstek üzerine: ShieldBreaker ve AimAssist için log limiti 4 olarak ayarlandı
+        int maxLog = (hackType.equals("ShieldBreaker") || hackType.equals("AimAssist")) ? 4 : 
+                     (hackType.toLowerCase().contains("aura") || hackType.toLowerCase().contains("elytratarget")) ? 5 : 12;
 
         if (logCount >= maxLog) {
             int kicks = kickCountMap.getOrDefault(uuid, 0) + 1;
@@ -543,6 +548,17 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
                 }
             }
 
+            // İstek üzerine: ShieldBreaker Kontrolü
+            ItemStack mainHand = attacker.getInventory().getItemInMainHand();
+            boolean hasAxe = mainHand.getType().name().contains("AXE");
+            if (event.getEntity() instanceof Player) {
+                Player victim = (Player) event.getEntity();
+                if (victim.isBlocking() && !hasAxe) {
+                    // Elinde balta yokken kalkan kırıyorsa veya şüpheli hızlıca baltaya geçip kırıyorsa
+                    flagPlayer(attacker, "ShieldBreaker");
+                }
+            }
+
             Entity victimEntity = event.getEntity();
             boolean isBotTarget = playerBotMap.containsValue(victimEntity.getUniqueId()) || playerAirBotMap.containsValue(victimEntity.getUniqueId());
 
@@ -581,6 +597,21 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
         Location from = event.getFrom();
         Location to = event.getTo();
         double distance = from.distance(to);
+
+        // İstek üzerine: AimAssist Kontrolü (Vurmasa bile kafası sürekli oyuncu/mob üzerinde kilitli, 360 dönenler)
+        if (Math.abs(to.getYaw() - from.getYaw()) > 65f || Math.abs(to.getPitch() - from.getPitch()) > 45f) {
+            for (Entity entity : player.getNearbyEntities(5, 5, 5)) {
+                if (entity instanceof LivingEntity && !(entity instanceof Llama)) {
+                    Location targetLoc = entity.getLocation();
+                    Vector toTarget = targetLoc.toVector().subtract(player.getLocation().toVector()).normalize();
+                    Vector lookDir = player.getLocation().getDirection().normalize();
+                    if (lookDir.dot(toTarget) > 0.85) {
+                        flagPlayer(player, "AimAssist");
+                        break;
+                    }
+                }
+            }
+        }
 
         if (player.isGliding()) {
             boolean hasFireworkInHand = player.getInventory().getItemInMainHand().getType() == Material.FIREWORK_ROCKET ||
@@ -724,13 +755,16 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
                     player.sendMessage(ChatColor.RED + "Zaten aktif bir 'axoac afk bot' var! Önce /bot kapa yazmalısın.");
                     return true;
                 }
-                LivingEntity bot = player.getWorld().spawn(player.getLocation(), org.bukkit.entity.ArmorStand.class);
+                Skeleton bot = player.getWorld().spawn(player.getLocation(), Skeleton.class);
                 bot.setCustomName(ChatColor.YELLOW + "axoac afk bot");
                 bot.setCustomNameVisible(true);
-                bot.setInvulnerable(true);
+                bot.setAI(false);
+                bot.setInvulnerable(false);
+                bot.addPotionEffect(new PotionEffect(PotionEffectType.REGENERATION, Integer.MAX_VALUE, 200, false, false));
+                bot.addPotionEffect(new PotionEffect(PotionEffectType.HEAL, Integer.MAX_VALUE, 200, false, false));
 
                 playerBotMap.put(uuid, bot.getUniqueId());
-                player.sendMessage(ChatColor.GREEN + "Sunucuyu açık tutan, sınırsız canı olan 'axoac afk bot' çağrıldı!");
+                player.sendMessage(ChatColor.GREEN + "Sunucuyu açık tutan, sınırsız canı ve regen efektli 'axoac afk bot (İskelet)' çağrıldı!");
                 return true;
             } else if (args.length > 0 && args[0].equalsIgnoreCase("kapa")) {
                 UUID botUuid = playerBotMap.remove(uuid);
@@ -771,14 +805,17 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
                     return true;
                 }
                 Location airLoc = player.getLocation().add(0, 20, 0);
-                LivingEntity airBot = player.getWorld().spawn(airLoc, org.bukkit.entity.ArmorStand.class);
+                Skeleton airBot = player.getWorld().spawn(airLoc, Skeleton.class);
                 airBot.setCustomName(ChatColor.LIGHT_PURPLE + "axoac afk bot");
                 airBot.setCustomNameVisible(true);
                 airBot.setGravity(false);
-                airBot.setInvulnerable(true);
+                airBot.setAI(false);
+                airBot.setInvulnerable(false);
+                airBot.addPotionEffect(new PotionEffect(PotionEffectType.REGENERATION, Integer.MAX_VALUE, 200, false, false));
+                airBot.addPotionEffect(new PotionEffect(PotionEffectType.HEAL, Integer.MAX_VALUE, 200, false, false));
 
                 playerAirBotMap.put(uuid, airBot.getUniqueId());
-                player.sendMessage(ChatColor.GREEN + "20 blok yukarıda sınırsız canı olan havadaki 'axoac afk bot' oluşturuldu!");
+                player.sendMessage(ChatColor.GREEN + "20 blok yukarıda sınırsız canı olan havadaki 'axoac afk bot (İskelet)' oluşturuldu!");
                 return true;
             }
         }
@@ -935,9 +972,10 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
 
     public void openReportMenu(Player player, String targetName) {
         Inventory gui = Bukkit.createInventory(null, 27, ChatColor.DARK_GRAY + "Şikayet: " + targetName);
-        ItemStack hile = new ItemStack(Material.LIME_STAINED_GLASS_PANE);
+        // İstek üzerine: Rapor menüsünde cam yerine hileyi andıran Netherite Kılıç simgesi eklendi
+        ItemStack hile = new ItemStack(Material.NETHERITE_SWORD);
         ItemMeta meta = hile.getItemMeta();
-        meta.setDisplayName(ChatColor.GREEN + "Hile Bildir");
+        meta.setDisplayName(ChatColor.RED + "Hile Bildirildi: " + targetName);
         hile.setItemMeta(meta);
         gui.setItem(13, hile);
         player.openInventory(gui);
@@ -1045,7 +1083,7 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
             } else if (args.length == 2) {
                 return Arrays.asList("1g", "3g", "7g", "12h", "1h", "1d", "30s");
             } else if (args.length == 3) {
-                return Arrays.asList("Attack_Aura", "Flight", "Speed", "ElytraTargetC", "Hile_Kullanımı", "Küfür/Hakaret", "Aşırı_Spam");
+                return Arrays.asList("Attack_Aura", "Flight", "Speed", "ElytraTargetC", "AimAssist", "ShieldBreaker", "Hile_Kullanımı", "Küfür/Hakaret", "Aşırı_Spam");
             }
         } else if (cmd.equals("banaç-ip")) {
             if (args.length == 1) {
@@ -1088,10 +1126,10 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
         } else if (cmd.equals("bot")) {
             if (args.length == 1) return Arrays.asList("spawn", "kapa");
         } else if (cmd.equals("bothava")) {
-            // DÜZELTİLDİ: Hatalı iki elemanlı singletonList yerine Arrays.asList kullanıldı
             if (args.length == 1) return Arrays.asList("kapa");
         }
 
         return Collections.emptyList();
     }
 }
+
