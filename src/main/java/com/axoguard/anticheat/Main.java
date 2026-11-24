@@ -48,13 +48,13 @@ import java.util.stream.Collectors;
 public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCompleter, PluginMessageListener {
 
     private final Map<UUID, Integer> violations = new HashMap<>();
-    private final Map<String, Integer> hackKickCountMap = new HashMap<>(); // Hile bazlı kick sayacı (Örn: UUID_Attack Aura -> 2)
+    private final Map<String, Integer> hackKickCountMap = new HashMap<>(); 
     private final Map<UUID, Long> hitBlockTime = new HashMap<>();
     private final Map<UUID, Integer> cpsMap = new HashMap<>();
     private final Map<Integer, UUID> botTargets = new HashMap<>();
 
     private final Map<UUID, Long> mutedPlayers = new HashMap<>();
-    private final Map<UUID, Integer> swearCountMap = new HashMap<>(); // Küfür sayacı
+    private final Map<UUID, Integer> swearCountMap = new HashMap<>();
     private final Map<UUID, Long> spamCheckMap = new HashMap<>();
 
     private final Map<UUID, Long> bannedPlayers = new HashMap<>();
@@ -68,7 +68,7 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
 
     private final Set<String> reportSet = new HashSet<>();
     private final Set<UUID> activeBotSession = new HashSet<>();
-    private final Map<UUID, String> botActionState = new HashMap<>(); // Botun o anki modu (izle, banla, bekle)
+    private final Map<UUID, String> botActionState = new HashMap<>();
     
     private final Map<UUID, List<LogEntry>> playerLogs = new HashMap<>();
     private final Map<UUID, Integer> playerLogOffsets = new HashMap<>();
@@ -111,6 +111,31 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
         }
 
         Bukkit.getScheduler().runTaskTimer(this, cpsMap::clear, 20L, 20L);
+        
+        // Zombi Botların kalkan durumunu ve döngüsünü sürekli tazeleyen görev
+        Bukkit.getScheduler().runTaskTimer(this, () -> {
+            for (UUID botUuid : playerBotMap.values()) {
+                Entity e = Bukkit.getEntity(botUuid);
+                if (e instanceof Zombie) {
+                    Zombie z = (Zombie) e;
+                    z.setHealth(z.getMaxHealth());
+                    if (z.getEquipment().getItemInOffHand().getType() != Material.SHIELD) {
+                        z.getEquipment().setItemInOffHand(new ItemStack(Material.SHIELD));
+                    }
+                }
+            }
+            for (UUID botUuid : playerAirBotMap.values()) {
+                Entity e = Bukkit.getEntity(botUuid);
+                if (e instanceof Zombie) {
+                    Zombie z = (Zombie) e;
+                    z.setHealth(z.getMaxHealth());
+                    if (z.getEquipment().getItemInOffHand().getType() != Material.SHIELD) {
+                        z.getEquipment().setItemInOffHand(new ItemStack(Material.SHIELD));
+                    }
+                }
+            }
+        }, 0L, 20L);
+
         getLogger().info("AxoGuard & AxoBot Gelişmiş Koruma Sürümü Aktif!");
     }
 
@@ -127,19 +152,19 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
         int logCount = violations.getOrDefault(uuid, 0) + 1;
         violations.put(uuid, logCount);
 
-        hitBlockTime.put(uuid, System.currentTimeMillis() + 3500); 
+        // Konsola ve loglara kesintisiz yansıtma
+        getLogger().warning("[AxoGuard-Log] " + player.getName() + " adlı oyuncuda hile tespit edildi: " + hackType + " (" + logCount + "x)");
 
         int botId = (Math.abs(uuid.hashCode()) % 500) + 1;
         botTargets.put(botId, uuid);
 
         int ping = getPing(player);
 
-        String alertMsg = ChatColor.GOLD + "AxoBot efendim, " + 
+        String alertMsg = ChatColor.GOLD + "AxoBot: Efendim, " + 
                 ChatColor.YELLOW + player.getName() + " " +
                 ChatColor.RED + "adlı oyuncuda " + 
                 ChatColor.DARK_RED + hackType + " " +
-                ChatColor.RED + "tespit ettim " +
-                ChatColor.GOLD + logCount + "x " +
+                ChatColor.RED + "tespit ettim (" + logCount + "/4x) " +
                 ChatColor.DARK_GRAY + "[" + ping + "ms]";
 
         for (Player op : Bukkit.getOnlinePlayers()) {
@@ -156,7 +181,7 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
             }
         }
 
-        // İstek üzerine limitler: Attack Aura ve ElytraTarget için 4x log limiti
+        // İstek üzerine: Attack Aura ve ElytraTarget için 4x limit
         int maxLog = (hackType.toLowerCase().contains("aura") || hackType.toLowerCase().contains("elytratarget")) ? 4 : 12;
 
         if (logCount >= maxLog) {
@@ -165,11 +190,10 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
             hackKickCountMap.put(kickKey, hileKicks);
             violations.put(uuid, 0);
 
-            // İstek üzerine: Aynı hileden 2 kez kick yeme şartı (2. kickte ban)
             if (hileKicks >= 2) {
                 triggerBanSequence(player, hackType);
             } else {
-                kickPlayer(player, hackType, hackType + " (Uyarı: " + hileKicks + "/2 Kick)");
+                kickPlayer(player, hackType, hileKicks);
             }
         }
     }
@@ -225,14 +249,14 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
         }
     }
 
-    private void kickPlayer(Player player, String hackType, String detail) {
+    private void kickPlayer(Player player, String hackType, int kickNum) {
         String kickReason = ChatColor.RED + "AxoAC - Güvenlik Sistemi\n\n" +
                 ChatColor.YELLOW + "Sunucumuzda hile kullanımı tespit edildi!\n" +
-                ChatColor.RED + "Sebep: " + ChatColor.YELLOW + detail + "\n\n" +
+                ChatColor.RED + "Sebep: " + ChatColor.YELLOW + hackType + " (" + kickNum + "/2 Kick)\n\n" +
                 ChatColor.AQUA + "discord.gg/axocraft";
 
         player.kickPlayer(kickReason);
-        Bukkit.broadcastMessage(ChatColor.DARK_RED + "[AxoGuard] " + ChatColor.YELLOW + player.getName() + ChatColor.RED + " hile (" + hackType + ") nedeniyle atıldı.");
+        Bukkit.broadcastMessage(ChatColor.DARK_RED + "[AxoGuard] " + ChatColor.YELLOW + player.getName() + ChatColor.RED + " adlı oyuncu console tarafından hile kullanımı (" + hackType + ") nedeniyle atıldı! [" + kickNum + "x Kick]");
     }
 
     private String formatDurationDetailed(String durationStr) {
@@ -276,14 +300,7 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
             target.kickPlayer(banScreen);
         }
 
-        Bukkit.broadcastMessage(ChatColor.GRAY + targetName + " ÖLDÜRÜLDÜ.");
-        Bukkit.broadcastMessage(ChatColor.DARK_RED + "---------------------------------------------");
-        Bukkit.broadcastMessage(ChatColor.RED + "" + ChatColor.BOLD + "AXOCRAFT - SÜRELİ YASAKLAMA BİLDİRİMİ");
-        Bukkit.broadcastMessage(ChatColor.GRAY + "🔨 YASAKLAYAN " + ChatColor.AQUA + executor);
-        Bukkit.broadcastMessage(ChatColor.GRAY + "🗡 YASAKLANAN " + ChatColor.RED + targetName);
-        Bukkit.broadcastMessage(ChatColor.GRAY + "🏷 SEBEP " + ChatColor.LIGHT_PURPLE + reason);
-        Bukkit.broadcastMessage(ChatColor.GRAY + "⌛ SÜRE " + ChatColor.GREEN + detailedDuration);
-        Bukkit.broadcastMessage(ChatColor.DARK_RED + "---------------------------------------------");
+        Bukkit.broadcastMessage(ChatColor.DARK_RED + "[AxoGuard] " + ChatColor.YELLOW + targetName + ChatColor.RED + " adlı oyuncu console tarafından banlandı!");
     }
 
     private void executeIpBan(String targetName, String executor, String durationStr, String reason) {
@@ -325,13 +342,7 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
             onlineTarget.kickPlayer(banScreen);
         }
 
-        Bukkit.broadcastMessage(ChatColor.DARK_RED + "---------------------------------------------");
-        Bukkit.broadcastMessage(ChatColor.RED + "" + ChatColor.BOLD + "AXOCRAFT - SÜRELİ IP BAN BİLDİRİMİ");
-        Bukkit.broadcastMessage(ChatColor.GRAY + "🔨 YASAKLAYAN " + ChatColor.AQUA + executor);
-        Bukkit.broadcastMessage(ChatColor.GRAY + "🗡 YASAKLANAN IP OYUNCU " + ChatColor.RED + targetName);
-        Bukkit.broadcastMessage(ChatColor.GRAY + "🏷 SEBEP " + ChatColor.LIGHT_PURPLE + reason);
-        Bukkit.broadcastMessage(ChatColor.GRAY + "⌛ SÜRE " + ChatColor.GREEN + detailedDuration);
-        Bukkit.broadcastMessage(ChatColor.DARK_RED + "---------------------------------------------");
+        Bukkit.broadcastMessage(ChatColor.DARK_RED + "[AxoGuard] " + ChatColor.YELLOW + targetName + ChatColor.RED + " adlı oyuncuya IP Ban atıldı!");
     }
 
     @EventHandler
@@ -387,12 +398,7 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
         }
 
         violations.remove(uuid);
-
         event.setJoinMessage(null);
-        for (Player p : Bukkit.getOnlinePlayers()) {
-            p.spigot().sendMessage(ChatMessageType.ACTION_BAR, new TextComponent(ChatColor.GREEN + "+ [" + player.getName() + "]"));
-        }
-
         player.setWalkSpeed(0.2f);
         player.setFlySpeed(0.1f);
     }
@@ -400,10 +406,6 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
     @EventHandler
     public void onQuit(PlayerQuitEvent event) {
         event.setQuitMessage(null);
-        Player player = event.getPlayer();
-        for (Player p : Bukkit.getOnlinePlayers()) {
-            p.spigot().sendMessage(ChatMessageType.ACTION_BAR, new TextComponent(ChatColor.RED + "- [" + player.getName() + "]"));
-        }
     }
 
     @EventHandler
@@ -413,6 +415,7 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
             if (entity instanceof LivingEntity) {
                 LivingEntity bot = (LivingEntity) entity;
                 bot.setHealth(bot.getMaxHealth());
+                event.setCancelled(true); // Botun zarar görmesini tamamen engelle
             }
         }
     }
@@ -444,15 +447,6 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
         mutedPlayers.put(target.getUniqueId(), System.currentTimeMillis() + durationMs);
 
         String detailedDuration = formatDurationDetailed(durationStr);
-
-        Bukkit.broadcastMessage(ChatColor.DARK_RED + "---------------------------------------------");
-        Bukkit.broadcastMessage(ChatColor.RED + "" + ChatColor.BOLD + "AXOCRAFT - SÜRELİ MUTE BİLDİRİMİ");
-        Bukkit.broadcastMessage(ChatColor.GRAY + "🔨 MUTELENEN YETKİLİ " + ChatColor.AQUA + executor);
-        Bukkit.broadcastMessage(ChatColor.GRAY + "🎙 MUTELENEN OYUNCU " + ChatColor.RED + targetName);
-        Bukkit.broadcastMessage(ChatColor.GRAY + "🏷 SEBEP " + ChatColor.LIGHT_PURPLE + reason);
-        Bukkit.broadcastMessage(ChatColor.GRAY + "⌛ SÜRE " + ChatColor.GREEN + detailedDuration);
-        Bukkit.broadcastMessage(ChatColor.DARK_RED + "---------------------------------------------");
-
         target.sendMessage(ChatColor.RED + "Sohbet yetkiniz " + detailedDuration + " süreyle kısıtlandı!");
     }
 
@@ -487,11 +481,11 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
                 return;
             } else {
                 mutedPlayers.remove(uuid);
-                player.sendMessage(ChatColor.GREEN + "Mutenizin süresi doldu, artık sohbeti kullanabilirsiniz.");
+                player.sendMessage(ChatColor.GREEN + "Mutenizin süresi doldu.");
             }
         }
 
-        // İstek üzerine: Küfür ve Spam Filtresi
+        // Küfür ve argo filtresi
         boolean hasBadWord = false;
         for (String bad : badWords) {
             if (msg.contains(bad)) {
@@ -505,28 +499,27 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
             int swears = swearCountMap.getOrDefault(uuid, 0) + 1;
             swearCountMap.put(uuid, swears);
 
-            player.sendMessage(ChatColor.RED + "Mesajınız engellendi! (Küfür/Argo tespit edildi)");
+            player.sendMessage(ChatColor.RED + "Mesajınız engellendi!");
 
-            // 4 kez küfür ederse 1 saat otomatik mute
             if (swears >= 4) {
                 mutedPlayers.put(uuid, System.currentTimeMillis() + (60 * 60 * 1000L));
                 swearCountMap.put(uuid, 0);
-                player.sendMessage(ChatColor.RED + "Aşırı küfür/argo kullanımından dolayı 1 saat süreyle mute yediniz!");
+                player.sendMessage(ChatColor.RED + "Küfür/argo kullanımından dolayı 1 saat süreyle mute yediniz!");
             }
             return;
         }
 
-        // Spam kontrolü (1.5 saniyeden hızlı mesaj)
+        // Spam kontrolü
         long lastMsgTime = spamCheckMap.getOrDefault(uuid, 0L);
         if (System.currentTimeMillis() - lastMsgTime < 1500 && !player.isOp()) {
             event.setCancelled(true);
-            mutedPlayers.put(uuid, System.currentTimeMillis() + (15 * 60 * 1000L)); // 15 dk mute
-            player.sendMessage(ChatColor.RED + "Çok hızlı mesaj attığınız için (Spam) 15 dakika süreyle mute yediniz!");
+            mutedPlayers.put(uuid, System.currentTimeMillis() + (15 * 60 * 1000L));
+            player.sendMessage(ChatColor.RED + "Spam yaptığınız için 15 dakika süreyle mute yediniz!");
             return;
         }
         spamCheckMap.put(uuid, System.currentTimeMillis());
 
-        // İstek üzerine: Bot ile Gizli Sohbet Sistemi (Kimse görmez, sadece sen ve bot)
+        // Bot ile Gizli Sohbet Sistemi
         if (activeBotSession.contains(uuid) && player.isOp()) {
             event.setCancelled(true);
             player.sendMessage(ChatColor.GOLD + "[Gizli Sohbet] [Sen] " + ChatColor.WHITE + event.getMessage());
@@ -541,16 +534,15 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
                 } else if (lower.contains("merhaba")) {
                     botReply = "AxoBot: Merhaba efendim, nasılsınız?";
                 } else if (lower.contains("napıyon") || lower.contains("ne yapıyon") || lower.contains("ne yapıyorsun")) {
-                    botReply = "AxoBot: Efendim, şüpheli oyuncuları gözetliyorum ve hile testleri yapıyorum.";
+                    botReply = "AxoBot: Efendim, şüpheli oyuncuları gözetliyorum ve log analizi yapıyorum.";
                 } else if (lower.contains("az daha izle") || lower.contains("bekle")) {
                     botActionState.put(uuid, "izle");
                     botReply = "AxoBot: Emredersiniz efendim, oyuncuyu az daha izlemeye devam ediyorum.";
                 } else if (lower.contains("banla") || lower.contains("at şunu")) {
                     botReply = "AxoBot: Efendim deliller tamam, hemen ban atıyorum / kick atıyorum!";
-                    // Simüle edilmiş otomatik ceza
-                    Bukkit.broadcastMessage(ChatColor.DARK_RED + "[AxoBot] Şüpheli oyuncu bot tarafından cezalandırıldı.");
+                    Bukkit.broadcastMessage(ChatColor.DARK_RED + "[AxoBot] İşlem başarıyla uygulandı.");
                 } else if (currentState.equals("izle")) {
-                    botReply = "AxoBot: Efendim izliyorum, hareketleri hala şüpheli. Ne buyurursunuz?";
+                    botReply = "AxoBot: Efendim izliyorum, veriler toplanıyor.";
                 } else {
                     botReply = "AxoBot: Emredersiniz efendim, takipteyim!";
                 }
@@ -651,9 +643,10 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
                                       player.getInventory().getItemInOffHand().getType() == Material.FIREWORK_ROCKET;
             boolean hasFireworkInInv = player.getInventory().contains(Material.FIREWORK_ROCKET);
 
-            if (distance > 1.8 && to.getY() >= from.getY() && (!hasFireworkInHand || (hasFireworkInInv && distance > 2.5))) {
+            // İstek üzerine: Elinde fişek yokken envanterde fişek olup havada basma tespiti
+            if (distance > 1.8 && to.getY() >= from.getY() && (!hasFireworkInHand && hasFireworkInInv)) {
                 event.setTo(from);
-                flagPlayer(player, "ElytraTargetC");
+                flagPlayer(player, "ElytraTargetC (Envanter Fişek Hilesi)");
                 return;
             }
         }
@@ -694,9 +687,7 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
             SkullMeta meta = (SkullMeta) skull.getItemMeta();
             meta.setOwningPlayer(target);
             meta.setDisplayName(ChatColor.YELLOW + target.getName());
-            meta.setLore(Arrays.asList(
-                    ChatColor.AQUA + "Son 1 Günlük Logları Görmek İçin Tıkla"
-            ));
+            meta.setLore(Arrays.asList(ChatColor.AQUA + "Logları Görmek İçin Tıkla"));
             skull.setItemMeta(meta);
             gui.setItem(slot++, skull);
         }
@@ -706,47 +697,21 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
     public void openPlayerLogsGUI(Player player, UUID targetUuid, int dayOffset) {
         playerLogOffsets.put(player.getUniqueId(), dayOffset);
         String targetName = Bukkit.getOfflinePlayer(targetUuid).getName();
-        String dayLabel = (dayOffset == 0) ? "Bugün" : (Math.abs(dayOffset) + ". Gün Önce");
-        Inventory gui = Bukkit.createInventory(null, 54, ChatColor.DARK_RED + "Loglar: " + targetName + " (" + dayLabel + ")");
+        Inventory gui = Bukkit.createInventory(null, 54, ChatColor.DARK_RED + "Loglar: " + targetName);
 
         List<LogEntry> allLogs = playerLogs.getOrDefault(targetUuid, new ArrayList<>());
-        long now = System.currentTimeMillis();
-        long dayInMillis = 24 * 60 * 60 * 1000L;
-
-        List<LogEntry> filteredLogs = allLogs.stream().filter(entry -> {
-            long diff = now - entry.timestamp;
-            long dayIndex = diff / dayInMillis;
-            return dayIndex == Math.abs(dayOffset);
-        }).collect(Collectors.toList());
-
         int slot = 0;
-        SimpleDateFormat sdf = new SimpleDateFormat("dd/MM/yyyy HH:mm:ss");
+        SimpleDateFormat sdf = new SimpleDateFormat("HH:mm:ss");
 
-        for (LogEntry log : filteredLogs) {
+        for (LogEntry log : allLogs) {
             if (slot >= 45) break;
             ItemStack paper = new ItemStack(Material.PAPER);
             ItemMeta meta = paper.getItemMeta();
             meta.setDisplayName(ChatColor.RED + log.hackType);
-            meta.setLore(Arrays.asList(
-                    ChatColor.YELLOW + "Tarih: " + ChatColor.WHITE + sdf.format(new Date(log.timestamp)),
-                    ChatColor.AQUA + "▶ Yanına Işınlan / İzle"
-            ));
+            meta.setLore(Arrays.asList(ChatColor.YELLOW + "Zaman: " + ChatColor.WHITE + sdf.format(new Date(log.timestamp))));
             paper.setItemMeta(meta);
             gui.setItem(slot++, paper);
         }
-
-        ItemStack prevDay = new ItemStack(Material.ARROW);
-        ItemMeta prevMeta = prevDay.getItemMeta();
-        prevMeta.setDisplayName(ChatColor.GREEN + "◀ Önceki Gün");
-        prevDay.setItemMeta(prevMeta);
-        gui.setItem(45, prevDay);
-
-        ItemStack nextDay = new ItemStack(Material.ARROW);
-        ItemMeta nextMeta = nextDay.getItemMeta();
-        nextMeta.setDisplayName(ChatColor.GREEN + "Sonraki Gün ▶");
-        nextDay.setItemMeta(nextMeta);
-        gui.setItem(53, nextDay);
-
         player.openInventory(gui);
     }
 
@@ -763,7 +728,7 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
             }
             Player target = Bukkit.getPlayer(args[0]);
             if (target == null) {
-                player.sendMessage(ChatColor.RED + "Böyle bir oyuncu bulunamadı / oyunda yok!");
+                player.sendMessage(ChatColor.RED + "Oyuncu bulunamadı!");
                 return true;
             }
             reportSet.add(target.getName());
@@ -785,31 +750,30 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
             UUID uuid = player.getUniqueId();
             if (args.length > 0 && args[0].equalsIgnoreCase("spawn")) {
                 if (playerBotMap.containsKey(uuid)) {
-                    player.sendMessage(ChatColor.RED + "Zaten aktif bir 'axoac afk bot' var! Önce /bot kapa yazmalısın.");
+                    player.sendMessage(ChatColor.RED + "Zaten aktif bir botun var!");
                     return true;
                 }
-                // İstek üzerine: Zombi formunda, sınırsız canı olan ve regen/heal efektli afk bot
                 Zombie bot = player.getWorld().spawn(player.getLocation(), Zombie.class);
                 bot.setCustomName(ChatColor.YELLOW + "axoac afk bot");
                 bot.setCustomNameVisible(true);
                 bot.setAI(false);
-                bot.setInvulnerable(false);
+                bot.setInvulnerable(true);
                 bot.addPotionEffect(new PotionEffect(PotionEffectType.REGENERATION, Integer.MAX_VALUE, 200, false, false));
                 bot.addPotionEffect(new PotionEffect(PotionEffectType.HEAL, Integer.MAX_VALUE, 200, false, false));
 
                 playerBotMap.put(uuid, bot.getUniqueId());
-                player.sendMessage(ChatColor.GREEN + "Sunucuyu açık tutan, sınırsız canı olan 'axoac afk bot (Zombi)' çağrıldı!");
+                player.sendMessage(ChatColor.GREEN + "Ölmez Zombi AFK bot çağrıldı!");
                 return true;
             } else if (args.length > 0 && args[0].equalsIgnoreCase("kalkan")) {
                 if (playerBotMap.containsKey(uuid)) {
-                    player.sendMessage(ChatColor.RED + "Zaten aktif bir 'axoac afk bot' var! Önce /bot kapa yazmalısın.");
+                    player.sendMessage(ChatColor.RED + "Zaten aktif bir botun var!");
                     return true;
                 }
                 Zombie bot = player.getWorld().spawn(player.getLocation(), Zombie.class);
-                bot.setCustomName(ChatColor.GOLD + "axoac afk bot (Kalkanlı Zombi)");
+                bot.setCustomName(ChatColor.GOLD + "axoac afk bot (Kalkanlı)");
                 bot.setCustomNameVisible(true);
                 bot.setAI(false);
-                bot.setInvulnerable(false);
+                bot.setInvulnerable(true);
                 bot.getEquipment().setItemInOffHand(new ItemStack(Material.SHIELD));
                 bot.addPotionEffect(new PotionEffect(PotionEffectType.REGENERATION, Integer.MAX_VALUE, 200, false, false));
                 bot.addPotionEffect(new PotionEffect(PotionEffectType.HEAL, Integer.MAX_VALUE, 200, false, false));
@@ -820,15 +784,11 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
             } else if (args.length > 0 && args[0].equalsIgnoreCase("kapa")) {
                 UUID botUuid = playerBotMap.remove(uuid);
                 if (botUuid != null) {
-                    for (Entity e : player.getWorld().getEntities()) {
-                        if (e.getUniqueId().equals(botUuid)) {
-                            e.remove();
-                            break;
-                        }
-                    }
-                    player.sendMessage(ChatColor.GREEN + "axoac afk bot kapatıldı.");
+                    Entity e = Bukkit.getEntity(botUuid);
+                    if (e != null) e.remove();
+                    player.sendMessage(ChatColor.GREEN + "Bot kapatıldı.");
                 } else {
-                    player.sendMessage(ChatColor.RED + "Aktif bir afk botun bulunmuyor!");
+                    player.sendMessage(ChatColor.RED + "Aktif botun yok!");
                 }
                 return true;
             }
@@ -839,39 +799,35 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
             if (args.length > 0 && args[0].equalsIgnoreCase("kapa")) {
                 UUID botUuid = playerAirBotMap.remove(uuid);
                 if (botUuid != null) {
-                    for (Entity e : player.getWorld().getEntities()) {
-                        if (e.getUniqueId().equals(botUuid)) {
-                            e.remove();
-                            break;
-                        }
-                    }
-                    player.sendMessage(ChatColor.GREEN + "Havadaki 'axoac afk bot' kapatıldı.");
+                    Entity e = Bukkit.getEntity(botUuid);
+                    if (e != null) e.remove();
+                    player.sendMessage(ChatColor.GREEN + "Havadaki bot kapatıldı.");
                 } else {
-                    player.sendMessage(ChatColor.RED + "Aktif bir hava afk botun bulunmuyor!");
+                    player.sendMessage(ChatColor.RED + "Hava botun yok!");
                 }
                 return true;
             } else if (args.length > 0 && args[0].equalsIgnoreCase("kalkan")) {
                 if (playerAirBotMap.containsKey(uuid)) {
-                    player.sendMessage(ChatColor.RED + "Zaten havada aktif bir afk botun var!");
+                    player.sendMessage(ChatColor.RED + "Zaten havada botun var!");
                     return true;
                 }
                 Location airLoc = player.getLocation().add(0, 20, 0);
                 Zombie airBot = player.getWorld().spawn(airLoc, Zombie.class);
-                airBot.setCustomName(ChatColor.GOLD + "axoac afk bot (Kalkanlı Zombi)");
+                airBot.setCustomName(ChatColor.GOLD + "axoac afk bot (Kalkanlı)");
                 airBot.setCustomNameVisible(true);
                 airBot.setGravity(false);
                 airBot.setAI(false);
-                airBot.setInvulnerable(false);
+                airBot.setInvulnerable(true);
                 airBot.getEquipment().setItemInOffHand(new ItemStack(Material.SHIELD));
                 airBot.addPotionEffect(new PotionEffect(PotionEffectType.REGENERATION, Integer.MAX_VALUE, 200, false, false));
                 airBot.addPotionEffect(new PotionEffect(PotionEffectType.HEAL, Integer.MAX_VALUE, 200, false, false));
 
                 playerAirBotMap.put(uuid, airBot.getUniqueId());
-                player.sendMessage(ChatColor.GREEN + "20 blok yukarısındaki kalkanlı Zombi AFK bot oluşturuldu!");
+                player.sendMessage(ChatColor.GREEN + "20 blok yukarıda kalkanlı Zombi hava botu oluşturuldu!");
                 return true;
             } else {
                 if (playerAirBotMap.containsKey(uuid)) {
-                    player.sendMessage(ChatColor.RED + "Zaten havada aktif bir afk botun var!");
+                    player.sendMessage(ChatColor.RED + "Zaten havada botun var!");
                     return true;
                 }
                 Location airLoc = player.getLocation().add(0, 20, 0);
@@ -880,12 +836,12 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
                 airBot.setCustomNameVisible(true);
                 airBot.setGravity(false);
                 airBot.setAI(false);
-                airBot.setInvulnerable(false);
+                airBot.setInvulnerable(true);
                 airBot.addPotionEffect(new PotionEffect(PotionEffectType.REGENERATION, Integer.MAX_VALUE, 200, false, false));
                 airBot.addPotionEffect(new PotionEffect(PotionEffectType.HEAL, Integer.MAX_VALUE, 200, false, false));
 
                 playerAirBotMap.put(uuid, airBot.getUniqueId());
-                player.sendMessage(ChatColor.GREEN + "20 blok yukarıda Zombi AFK bot oluşturuldu!");
+                player.sendMessage(ChatColor.GREEN + "20 blok yukarıda Zombi hava botu oluşturuldu!");
                 return true;
             }
         }
@@ -900,119 +856,7 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
                 player.sendMessage(ChatColor.RED + "Kullanım: /banla <oyuncu> <süre> <sebep>");
                 return true;
             }
-            Player targetCheck = Bukkit.getPlayer(args[0]);
-            if (targetCheck == null && Bukkit.getOfflinePlayer(args[0]).getName() == null) {
-                player.sendMessage(ChatColor.RED + "Bu isimde bir oyuncu bulunamadı!");
-                return true;
-            }
             executeBan(args[0], player.getName(), args[1], args[2]);
-            return true;
-        }
-
-        if (cmd.equals("banla-ip")) {
-            if (args.length < 3) {
-                player.sendMessage(ChatColor.RED + "Kullanım: /banla-ip <oyuncu> <süre> <sebep>");
-                return true;
-            }
-            executeIpBan(args[0], player.getName(), args[1], args[2]);
-            return true;
-        }
-
-        if (cmd.equals("ban-ip")) {
-            if (args.length < 1) {
-                player.sendMessage(ChatColor.RED + "Kullanım: /ban-ip <ip>");
-                return true;
-            }
-            bannedIps.remove(args[0]);
-            ipBannedUntil.remove(args[0]);
-            player.sendMessage(ChatColor.GREEN + args[0] + " IP adresinin banı açıldı.");
-            return true;
-        }
-
-        if (cmd.equals("banaç")) {
-            if (args.length < 1) {
-                player.sendMessage(ChatColor.RED + "Kullanım: /banaç <oyuncu>");
-                return true;
-            }
-            UUID targetUuid = Bukkit.getOfflinePlayer(args[0]).getUniqueId();
-            if (!bannedPlayers.containsKey(targetUuid)) {
-                player.sendMessage(ChatColor.RED + "Bu oyuncunun aktif bir banı bulunmuyor!");
-                return true;
-            }
-            bannedPlayers.remove(targetUuid);
-            banReasons.remove(targetUuid);
-            player.sendMessage(ChatColor.GREEN + args[0] + " oyuncusunun banı açıldı.");
-            return true;
-        }
-
-        if (cmd.equals("banaç-ip")) {
-            if (args.length < 1) {
-                player.sendMessage(ChatColor.RED + "Kullanım: /banaç-ip <oyuncu_adı_veya_ip>");
-                return true;
-            }
-            String query = args[0];
-            String targetIp = null;
-
-            for (Map.Entry<String, String> entry : ipToPlayerName.entrySet()) {
-                if (entry.getValue().equalsIgnoreCase(query)) {
-                    targetIp = entry.getKey();
-                    break;
-                }
-            }
-            if (targetIp == null) targetIp = query;
-
-            if (!bannedIps.contains(targetIp)) {
-                player.sendMessage(ChatColor.RED + "Bu IP adresine ait aktif bir IP ban bulunmuyor!");
-                return true;
-            }
-
-            bannedIps.remove(targetIp);
-            ipBannedUntil.remove(targetIp);
-            ipBanReasons.remove(targetIp);
-            ipToPlayerName.remove(targetIp);
-
-            player.sendMessage(ChatColor.GREEN + "Başarılı! " + query + " adlı oyuncunun IP banı (IP: " + targetIp + ") kaldırıldı, artık sunucuya girebilirler.");
-            return true;
-        }
-
-        if (cmd.equals("mutele")) {
-            if (args.length < 3) {
-                player.sendMessage(ChatColor.RED + "Kullanım: /mutele <oyuncu> <süre> <sebep>");
-                return true;
-            }
-            Player targetCheck = Bukkit.getPlayer(args[0]);
-            if (targetCheck == null) {
-                player.sendMessage(ChatColor.RED + "Mutelenecek oyuncu oyunda bulunamadı!");
-                return true;
-            }
-            executeMute(args[0], player.getName(), args[1], args[2]);
-            return true;
-        }
-
-        if (cmd.equals("muteaç")) {
-            if (args.length < 1) {
-                player.sendMessage(ChatColor.RED + "Kullanım: /muteaç <oyuncu>");
-                return true;
-            }
-            Player target = Bukkit.getPlayer(args[0]);
-            UUID targetUuid = target != null ? target.getUniqueId() : Bukkit.getOfflinePlayer(args[0]).getUniqueId();
-
-            if (!mutedPlayers.containsKey(targetUuid)) {
-                player.sendMessage(ChatColor.RED + "Bu oyuncunun aktif bir mutesi bulunmuyor!");
-                return true;
-            }
-
-            mutedPlayers.remove(targetUuid);
-
-            Bukkit.broadcastMessage(ChatColor.DARK_RED + "---------------------------------------------");
-            Bukkit.broadcastMessage(ChatColor.RED + "" + ChatColor.BOLD + "AXOCRAFT - MUTE KALDIRILDI BİLDİRİMİ");
-            Bukkit.broadcastMessage(ChatColor.GRAY + "🔨 YETKİLİ " + ChatColor.AQUA + player.getName());
-            Bukkit.broadcastMessage(ChatColor.GRAY + "🎙 MUTESİ AÇILAN " + ChatColor.RED + args[0]);
-            Bukkit.broadcastMessage(ChatColor.DARK_RED + "---------------------------------------------");
-
-            if (target != null && target.isOnline()) {
-                target.sendMessage(ChatColor.GREEN + "Muteniz yetkili tarafından kaldırıldı, artık yazabilirsiniz.");
-            }
             return true;
         }
 
@@ -1025,10 +869,9 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
                         Player target = Bukkit.getPlayer(targetUuid);
                         player.teleport(target.getLocation());
                         activeBotSession.add(player.getUniqueId());
-                        player.sendMessage(ChatColor.AQUA + "AxoBot #" + id + " ile " + target.getName() + " yanına ışınlandınız.");
-                        player.sendMessage(ChatColor.YELLOW + "AxoBot: Efendim, Aleykümselam as napıon? İzlemeye başladık, sohbete yazarak benimle konuşabilirsiniz.");
+                        player.sendMessage(ChatColor.AQUA + "AxoBot: İzlemeye başlandı. Sohbetten benimle konuşabilirsin.");
                     } else {
-                        player.sendMessage(ChatColor.RED + "Geçersiz Bot ID veya hedef oyunda değil!");
+                        player.sendMessage(ChatColor.RED + "Geçersiz Bot ID veya hedef çevrimdışı!");
                     }
                 } catch (NumberFormatException e) {
                     player.sendMessage(ChatColor.RED + "Hatalı ID formatı!");
@@ -1042,7 +885,6 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
 
     public void openReportMenu(Player player, String targetName) {
         Inventory gui = Bukkit.createInventory(null, 27, ChatColor.DARK_GRAY + "Şikayet: " + targetName);
-        // İstek üzerine: Rapor menüsünde hileyi andıran Netherite Kılıç simgesi
         ItemStack hile = new ItemStack(Material.NETHERITE_SWORD);
         ItemMeta meta = hile.getItemMeta();
         meta.setDisplayName(ChatColor.RED + "Hile Bildirildi: " + targetName);
@@ -1062,7 +904,7 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
                 SkullMeta meta = (SkullMeta) skull.getItemMeta();
                 meta.setOwningPlayer(t);
                 meta.setDisplayName(ChatColor.YELLOW + t.getName());
-                meta.setLore(Arrays.asList(ChatColor.AQUA + "AxoBot ile Yanına Işınlan ve İzle"));
+                meta.setLore(Arrays.asList(ChatColor.AQUA + "İzlemek İçin Tıkla"));
                 skull.setItemMeta(meta);
                 gui.setItem(slot++, skull);
             }
@@ -1075,51 +917,6 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
         String title = event.getView().getTitle();
         Player player = (Player) event.getWhoClicked();
 
-        if (title.equals(ChatColor.DARK_RED + "AxoGuard - Oyuncu Seçin")) {
-            event.setCancelled(true);
-            if (event.getCurrentItem() == null || !event.getCurrentItem().hasItemMeta()) return;
-            String targetName = ChatColor.stripColor(event.getCurrentItem().getItemMeta().getDisplayName());
-            Player target = Bukkit.getPlayer(targetName);
-            if (target != null) {
-                player.closeInventory();
-                openPlayerLogsGUI(player, target.getUniqueId(), 0);
-            } else {
-                player.sendMessage(ChatColor.RED + "Oyuncu çevrimdışı!");
-            }
-            return;
-        }
-
-        if (title.startsWith(ChatColor.DARK_RED + "Loglar:")) {
-            event.setCancelled(true);
-            if (event.getCurrentItem() == null || !event.getCurrentItem().hasItemMeta()) return;
-
-            String itemName = ChatColor.stripColor(event.getCurrentItem().getItemMeta().getDisplayName());
-            String targetName = title.split(" \\(")[0].replace(ChatColor.DARK_RED + "Loglar: ", "").trim();
-            org.bukkit.OfflinePlayer targetOffline = Bukkit.getOfflinePlayer(targetName);
-            if (targetOffline == null) return;
-
-            int currentOffset = playerLogOffsets.getOrDefault(player.getUniqueId(), 0);
-
-            if (itemName.contains("Önceki Gün")) {
-                currentOffset++;
-                openPlayerLogsGUI(player, targetOffline.getUniqueId(), currentOffset);
-            } else if (itemName.contains("Sonraki Gün")) {
-                if (currentOffset > 0) {
-                    currentOffset--;
-                    openPlayerLogsGUI(player, targetOffline.getUniqueId(), currentOffset);
-                }
-            }
-            return;
-        }
-
-        if (title.startsWith(ChatColor.DARK_GRAY + "Şikayet:")) {
-            event.setCancelled(true);
-            player.closeInventory();
-            player.sendMessage(ChatColor.GREEN + "AxoGuard: Şikayetiniz iletildi, report listesine yönlendiriliyorsunuz.");
-            openReportsGUI(player);
-            return;
-        }
-
         if (title.equals(ChatColor.DARK_RED + "Reportlanan Oyuncular")) {
             event.setCancelled(true);
             if (event.getCurrentItem() == null || !event.getCurrentItem().hasItemMeta()) return;
@@ -1131,9 +928,7 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
                 player.closeInventory();
                 player.teleport(target.getLocation());
                 activeBotSession.add(player.getUniqueId());
-                player.sendMessage(ChatColor.AQUA + "AxoBot: Aleykümselam as napıon? " + target.getName() + " oyuncusunun yanına ışınlandık, izlemeye başlıyoruz.");
-            } else {
-                player.sendMessage(ChatColor.RED + "Bu oyuncu artık oyunda değil!");
+                player.sendMessage(ChatColor.AQUA + "AxoBot: " + target.getName() + " oyuncusunun yanına ışınlandık, izliyoruz.");
             }
         }
     }
@@ -1141,64 +936,10 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
     @Override
     public List<String> onTabComplete(CommandSender sender, Command command, String alias, String[] args) {
         if (!sender.isOp()) return Collections.emptyList();
-
         String cmd = command.getName().toLowerCase();
-
-        if (cmd.equals("banla") || cmd.equals("banla-ip") || cmd.equals("mutele")) {
-            if (args.length == 1) {
-                return Bukkit.getOnlinePlayers().stream()
-                        .map(Player::getName)
-                        .filter(name -> name.toLowerCase().startsWith(args[0].toLowerCase()))
-                        .collect(Collectors.toList());
-            } else if (args.length == 2) {
-                return Arrays.asList("1g", "3g", "7g", "12h", "1h", "1d", "30s");
-            } else if (args.length == 3) {
-                return Arrays.asList("Attack_Aura", "Flight", "Speed", "ElytraTargetC", "ShieldBreaker", "Hile_Kullanımı", "Küfür/Hakaret", "Aşırı_Spam");
-            }
-        } else if (cmd.equals("banaç-ip")) {
-            if (args.length == 1) {
-                List<String> list = new ArrayList<>();
-                for (Map.Entry<String, String> entry : ipToPlayerName.entrySet()) {
-                    if (bannedIps.contains(entry.getKey())) {
-                        list.add(entry.getValue() + " [" + entry.getKey() + "]");
-                    }
-                }
-                return list.stream()
-                        .filter(name -> name.toLowerCase().startsWith(args[0].toLowerCase()))
-                        .collect(Collectors.toList());
-            }
-        } else if (cmd.equals("muteaç")) {
-            if (args.length == 1) {
-                List<String> mutedNames = new ArrayList<>();
-                for (UUID uuid : mutedPlayers.keySet()) {
-                    Player p = Bukkit.getPlayer(uuid);
-                    if (p != null) mutedNames.add(p.getName());
-                    else mutedNames.add(Bukkit.getOfflinePlayer(uuid).getName());
-                }
-                return mutedNames.stream()
-                        .filter(Objects::nonNull)
-                        .filter(name -> name.toLowerCase().startsWith(args[0].toLowerCase()))
-                        .collect(Collectors.toList());
-            }
-        } else if (cmd.equals("banaç")) {
-            if (args.length == 1) {
-                List<String> bannedNames = new ArrayList<>();
-                for (UUID uuid : bannedPlayers.keySet()) {
-                    bannedNames.add(Bukkit.getOfflinePlayer(uuid).getName());
-                }
-                return bannedNames.stream()
-                        .filter(Objects::nonNull)
-                        .filter(name -> name.toLowerCase().startsWith(args[0].toLowerCase()))
-                        .collect(Collectors.toList());
-            }
-        } else if (cmd.equals("axobot")) {
-            if (args.length == 1) return Collections.singletonList("izle");
-        } else if (cmd.equals("bot")) {
-            if (args.length == 1) return Arrays.asList("spawn", "kalkan", "kapa");
-        } else if (cmd.equals("bothava")) {
+        if (cmd.equals("bot") || cmd.equals("bothava")) {
             if (args.length == 1) return Arrays.asList("spawn", "kalkan", "kapa");
         }
-
         return Collections.emptyList();
     }
 }
