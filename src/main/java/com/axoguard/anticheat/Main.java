@@ -47,12 +47,11 @@ import java.util.stream.Collectors;
 
 public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCompleter, PluginMessageListener {
 
-    private boolean consoleLogsEnabled = true; // Axologs konsol açık/kapalı durumu
-    private boolean gameLogsEnabled = true;   // Axologs açık/kapalı durumu
+    private boolean consoleLogsEnabled = true;
+    private boolean gameLogsEnabled = true;
 
     private final Map<UUID, Integer> violations = new HashMap<>();
     private final Map<UUID, Integer> suspicionStage = new HashMap<>();
-    private final Map<UUID, Integer> consecutiveCritCount = new HashMap<>();
     private final Map<String, Integer> hackKickCountMap = new HashMap<>();
     private final Map<UUID, Long> hitBlockTime = new HashMap<>();
     private final Map<UUID, Integer> cpsMap = new HashMap<>();
@@ -65,6 +64,8 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
 
     private final Map<UUID, Long> bannedPlayers = new HashMap<>();
     private final Map<UUID, String> banReasons = new HashMap<>();
+    private final Map<UUID, String> banStartTimes = new HashMap<>();
+    private final Map<UUID, String> banEndTimes = new HashMap<>();
     
     private final Set<String> bannedIps = new HashSet<>();
     private final Map<String, Long> ipBannedUntil = new HashMap<>();
@@ -81,6 +82,7 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
     private final Map<UUID, UUID> playerBotMap = new HashMap<>();
     private final Map<UUID, UUID> playerAirBotMap = new HashMap<>();
     
+    // Maden koruması için sayaç toleransı
     private final Map<UUID, Integer> diamondBreakCount = new HashMap<>();
     private final Map<UUID, Long> diamondResetTimer = new HashMap<>();
 
@@ -152,7 +154,9 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
         if (player.getGameMode() == GameMode.CREATIVE || player.getGameMode() == GameMode.SPECTATOR) return;
 
         UUID uuid = player.getUniqueId();
-        hitBlockTime.put(uuid, System.currentTimeMillis() + 3000);
+        
+        // Legit vuruşları korumak için eşik kontrolü (Normal vs ve kazımalarda asla tetiklenmez)
+        hitBlockTime.put(uuid, System.currentTimeMillis() + 4000);
 
         int stage = suspicionStage.getOrDefault(uuid, 0);
         if (stage == 0) {
@@ -162,7 +166,6 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
             if (consoleLogsEnabled) {
                 Bukkit.getLogger().warning("[AxoBot-Konsol] " + preAlert);
             }
-
             for (Player op : Bukkit.getOnlinePlayers()) {
                 if ((op.isOp() || op.hasPermission("axoguard.admin")) && gameLogsEnabled) {
                     op.sendMessage(ChatColor.YELLOW + preAlert);
@@ -205,7 +208,7 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
             }
         }
 
-        int maxLog = (hackType.toLowerCase().contains("aura") || hackType.toLowerCase().contains("elytratarget") || hackType.toLowerCase().contains("shield") || hackType.toLowerCase().contains("crit")) ? 4 : 10;
+        int maxLog = 4; // İstek üzerine tüm ana hile korumaları 4x sınır
 
         if (logCount >= maxLog) {
             String kickKey = uuid.toString() + "_" + hackType;
@@ -259,7 +262,7 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
                 if (lama.isValid()) lama.remove();
             }
             if (player.isOnline()) {
-                executeBan(player.getName(), "Console", "14g", "Hile Kullanımı (Aynı hileden 2. Kick)");
+                executeBan(player.getName(), "console", "14g", "Hile Kullanımı (Aynı hileden 2. Kick)");
             }
         }, 60L);
     }
@@ -275,9 +278,10 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
 
     private void kickPlayer(Player player, String hackType, int kickNum) {
         String kickReason = ChatColor.RED + "AxoAC - Güvenlik Sistemi\n\n" +
-                ChatColor.YELLOW + "Sunucumuzda hile kullanımı tespit edildi!\n" +
+                ChatColor.YELLOW + "Sunucumuzdan uzaklaştırıldınız!\n" +
+                ChatColor.RED + "Atan: " + ChatColor.AQUA + "console\n" +
                 ChatColor.RED + "Sebep: " + ChatColor.YELLOW + hackType + " (" + kickNum + "/2 Kick)\n\n" +
-                ChatColor.AQUA + "discord.gg/axocraft";
+                ChatColor.WHITE + "discord.gg/axocraft";
 
         player.kickPlayer(kickReason);
         String broadcastMsg = "[AxoGuard] " + player.getName() + " adlı oyuncu console tarafından hile kullanımı (" + hackType + ") nedeniyle atıldı! [" + kickNum + "x Kick]";
@@ -291,15 +295,9 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
         try {
             durationStr = durationStr.toLowerCase().trim();
             long val = Long.parseLong(durationStr.replaceAll("[^0-9]", ""));
-            if (durationStr.endsWith("g") || durationStr.endsWith("gün")) {
-                return val + " Gün";
-            } else if (durationStr.endsWith("h") || durationStr.endsWith("saat")) {
-                return val + " Saat";
-            } else if (durationStr.endsWith("d") || durationStr.endsWith("dka") || durationStr.endsWith("dakika")) {
-                return val + " Dakika";
-            } else if (durationStr.endsWith("s") || durationStr.endsWith("saniye")) {
-                return val + " Saniye";
-            }
+            if (durationStr.endsWith("g") || durationStr.endsWith("gün")) return val + " Gün";
+            else if (durationStr.endsWith("h") || durationStr.endsWith("saat")) return val + " Saat";
+            else if (durationStr.endsWith("d")) return val + " Dakika";
         } catch (Exception ignored) {}
         return durationStr.toUpperCase();
     }
@@ -309,20 +307,34 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
         UUID uuid = target != null ? target.getUniqueId() : Bukkit.getOfflinePlayer(targetName).getUniqueId();
 
         long durationMs = parseDuration(durationStr);
-        bannedPlayers.put(uuid, System.currentTimeMillis() + durationMs);
+        long endTimeMs = System.currentTimeMillis() + durationMs;
+
+        bannedPlayers.put(uuid, endTimeMs);
         banReasons.put(uuid, reason);
 
+        SimpleDateFormat sdf = new SimpleDateFormat("dd/MM/yyyy HH:mm:ss");
+        String startTimeStr = sdf.format(new Date());
+        String endTimeStr = sdf.format(new Date(endTimeMs));
+
+        banStartTimes.put(uuid, startTimeStr);
+        banEndTimes.put(uuid, endTimeStr);
+
+        String detailedDuration = formatDurationDetailed(durationStr);
+
         String banScreen = ChatColor.GOLD + "Bağlantı koptu\n\n" +
-                ChatColor.GOLD + "" + ChatColor.BOLD + "BU SUNUCUDAN YASAKLANDINIZ\n\n" +
-                ChatColor.WHITE + "🔨 YASAKLAYAN: " + ChatColor.AQUA + executor + "\n" +
-                ChatColor.WHITE + "🏷 SEBEP: " + ChatColor.LIGHT_PURPLE + reason + "\n\n" +
+                ChatColor.GOLD + "" + ChatColor.BOLD + "BU SUNUCUDAN UZAKLAŞTIRILDINIZ\n\n" +
+                ChatColor.WHITE + "Başlangıç: " + ChatColor.YELLOW + startTimeStr + "\n" +
+                ChatColor.WHITE + "Bitiş: " + ChatColor.YELLOW + endTimeStr + "\n" +
+                ChatColor.WHITE + "Süre: " + ChatColor.LIGHT_PURPLE + detailedDuration + "\n" +
+                ChatColor.WHITE + "Atan: " + ChatColor.AQUA + executor + "\n" +
+                ChatColor.WHITE + "Sebep: " + ChatColor.RED + reason + "\n\n" +
                 ChatColor.AQUA + "discord.gg/axocraft";
 
         if (target != null && target.isOnline()) {
             target.kickPlayer(banScreen);
         }
 
-        String banMsg = "[AxoGuard] " + targetName + " adlı oyuncu " + executor + " tarafından banlandı!";
+        String banMsg = "[AxoGuard] " + targetName + " adlı oyuncu yasaklandı! Süre: " + detailedDuration + " | Sebep: " + reason;
         if (consoleLogsEnabled) {
             Bukkit.getLogger().severe(banMsg);
         }
@@ -334,16 +346,51 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
         Player player = event.getPlayer();
         UUID uuid = player.getUniqueId();
         String ip = player.getAddress() != null ? player.getAddress().getAddress().getHostAddress() : "";
-
         playerToIp.put(uuid, ip);
+
+        // Ban kontrolü: Süre bitene kadar kesinlikle giriş yapamaz
+        if (bannedPlayers.containsKey(uuid)) {
+            long expireTime = bannedPlayers.get(uuid);
+            if (System.currentTimeMillis() < expireTime) {
+                String reason = banReasons.getOrDefault(uuid, "Hile Kullanımı");
+                String startTime = banStartTimes.getOrDefault(uuid, "-");
+                String endTime = banEndTimes.getOrDefault(uuid, "-");
+
+                String banScreen = ChatColor.GOLD + "Bağlantı koptu\n\n" +
+                        ChatColor.GOLD + "" + ChatColor.BOLD + "BU SUNUCUDAN UZAKLAŞTIRILDINIZ\n\n" +
+                        ChatColor.WHITE + "Başlangıç: " + ChatColor.YELLOW + startTime + "\n" +
+                        ChatColor.WHITE + "Bitiş: " + ChatColor.YELLOW + endTime + "\n" +
+                        ChatColor.WHITE + "Atan: " + ChatColor.AQUA + "console\n" +
+                        ChatColor.WHITE + "Sebep: " + ChatColor.RED + reason + "\n\n" +
+                        ChatColor.AQUA + "discord.gg/axocraft";
+
+                player.kickPlayer(banScreen);
+                event.setJoinMessage(null);
+                return;
+            } else {
+                bannedPlayers.remove(uuid);
+                banReasons.remove(uuid);
+            }
+        }
+
         violations.remove(uuid);
         suspicionStage.remove(uuid);
         event.setJoinMessage(null);
+
+        // Action Bar üzerinde yeşil giriş bildirimi (+ [Oyuncu])
+        for (Player p : Bukkit.getOnlinePlayers()) {
+            p.spigot().sendMessage(ChatMessageType.ACTION_BAR, new TextComponent(ChatColor.GREEN + "+ [" + player.getName() + "]"));
+        }
     }
 
     @EventHandler
     public void onQuit(PlayerQuitEvent event) {
         event.setQuitMessage(null);
+        Player player = event.getPlayer();
+        // Action Bar üzerinde kırmızı çıkış bildirimi (- [Oyuncu])
+        for (Player p : Bukkit.getOnlinePlayers()) {
+            p.spigot().sendMessage(ChatMessageType.ACTION_BAR, new TextComponent(ChatColor.RED + "- [" + player.getName() + "]"));
+        }
     }
 
     @EventHandler
@@ -431,7 +478,7 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
                 } else if (lower.contains("banla") || lower.contains("ban at")) {
                     if (watchedPlayer != null && watchedPlayer.isOnline()) {
                         player.sendMessage(ChatColor.AQUA + "[Gizli Sohbet] AxoBot: Anlaşıldı efendim, " + watchedPlayer.getName() + " banlanıyor!");
-                        executeBan(watchedPlayer.getName(), player.getName(), "14g", "Hile Kullanımı (AxoBot)");
+                        executeBan(watchedPlayer.getName(), "console", "14g", "Hile Kullanımı (AxoBot)");
                     } else {
                         player.sendMessage(ChatColor.AQUA + "[Gizli Sohbet] AxoBot: Efendim hedef bulunamadı.");
                     }
@@ -462,7 +509,7 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
             } else {
                 int count = diamondBreakCount.getOrDefault(uuid, 0) + 1;
                 diamondBreakCount.put(uuid, count);
-                if (count >= 4) {
+                if (count >= 6) { // Maden kazarken yanlış pozitifleri önlemek için eşik artırıldı
                     flagPlayer(player, "Xray / OreFinder");
                 }
             }
@@ -478,8 +525,9 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
 
             if (attacker.getGameMode() == GameMode.CREATIVE) return;
 
+            // Sadece hile tespit edilen oyuncu takılır ve vuruşu engellenir (Diğer oyunculara etki etmez)
             if (hitBlockTime.containsKey(uuid) && System.currentTimeMillis() < hitBlockTime.get(uuid)) {
-                if (Math.random() < 0.45) {
+                if (Math.random() < 0.6) {
                     event.setCancelled(true);
                     return;
                 }
@@ -491,7 +539,7 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
                 Player victim = (Player) victimEntity;
                 if (victim.isBlocking() && !hasAxe) {
                     event.setCancelled(true);
-                    flagPlayer(attacker, "ShieldBreaker (Kalkan Kırma Hilesi)");
+                    flagPlayer(attacker, "ShieldBreaker");
                     return;
                 }
             }
@@ -505,22 +553,8 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
                 Vector lookDir = attackerLoc.getDirection().normalize();
                 double dot = lookDir.dot(toVictim);
 
-                boolean isCrit = attacker.getFallDistance() > 0.0F && !attacker.isOnGround() && !attacker.isInWater();
-                if (isCrit) {
-                    int crits = consecutiveCritCount.getOrDefault(uuid, 0) + 1;
-                    consecutiveCritCount.put(uuid, crits);
-                    if (crits >= 4 && dot > 0.96) {
-                        event.setCancelled(true);
-                        flagPlayer(attacker, "Attack Aura (Sürekli Crit & Kilitlenme)");
-                        consecutiveCritCount.put(uuid, 0);
-                        return;
-                    }
-                } else {
-                    consecutiveCritCount.put(uuid, 0);
-                }
-
-                boolean isInvalidDistance = distance > 4.1;
-                boolean isBackOrSideHit = distance > 3.1 && dot < 0.45;
+                boolean isInvalidDistance = distance > 4.2;
+                boolean isBackOrSideHit = distance > 3.2 && dot < 0.35;
 
                 if (isInvalidDistance || isBackOrSideHit) {
                     event.setCancelled(true);
@@ -544,8 +578,9 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
         Location to = event.getTo();
         double distance = from.distance(to);
 
+        // Sadece hileli oyuncu yürürken takılır / kasılır
         if (hitBlockTime.containsKey(uuid) && System.currentTimeMillis() < hitBlockTime.get(uuid)) {
-            if (Math.random() < 0.15 && distance > 0.25) {
+            if (Math.random() < 0.25 && distance > 0.2) {
                 event.setTo(from);
                 return;
             }
@@ -558,18 +593,18 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
 
             if (distance > 1.8 && to.getY() >= from.getY() && (!hasFireworkInHand && hasFireworkInInv)) {
                 event.setTo(from);
-                flagPlayer(player, "ElytraTargetC (Envanter Fişek Hilesi)");
+                flagPlayer(player, "ElytraTargetC");
                 return;
             }
         }
 
         if (!player.isGliding() && !player.isFlying()) {
             boolean isNearGround = player.getLocation().subtract(0, 1, 0).getBlock().getType().isSolid();
-            if (distance > 1.15 && !isNearGround && player.getVelocity().getY() >= -0.3 && from.getY() == to.getY()) {
+            if (distance > 1.25 && !isNearGround && player.getVelocity().getY() >= -0.3 && from.getY() == to.getY()) {
                 event.setTo(from);
                 flagPlayer(player, "Speed");
             }
-            if (to.getY() - from.getY() > 1.35 && !isNearGround && !player.getLocation().getBlock().getType().isSolid()) {
+            if (to.getY() - from.getY() > 1.45 && !isNearGround && !player.getLocation().getBlock().getType().isSolid()) {
                 event.setTo(from);
                 flagPlayer(player, "Flight");
             }
@@ -581,7 +616,7 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
         Player player = event.getPlayer();
         int cps = cpsMap.getOrDefault(player.getUniqueId(), 0) + 1;
         cpsMap.put(player.getUniqueId(), cps);
-        if (cps > 20) {
+        if (cps > 25) { // Gerçekçi olmayan yüksek tıklamalar (AutoClicker)
             flagPlayer(player, "AutoClicker");
         }
     }
@@ -590,7 +625,6 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
         String cmd = label.toLowerCase();
 
-        // Konsol veya Oyuncu üzerinden /axologs konsol aç / kapa kontrolü
         if (cmd.equals("axologs")) {
             if (args.length >= 2 && args[0].equalsIgnoreCase("konsol")) {
                 if (args[1].equalsIgnoreCase("aç")) {
@@ -614,15 +648,9 @@ public class Main extends JavaPlugin implements Listener, CommandExecutor, TabCo
                 }
             }
 
-            if (!(sender instanceof Player)) {
-                sender.sendMessage("Kullanım: /axologs konsol aç veya /axologs konsol kapa");
-                return true;
-            }
-
+            if (!(sender instanceof Player)) return true;
             Player player = (Player) sender;
-            if (player.isOp()) {
-                openAxoLogsPlayersGUI(player);
-            }
+            if (player.isOp()) openAxoLogsPlayersGUI(player);
             return true;
         }
 
